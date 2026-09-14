@@ -1,0 +1,6 @@
+{
+  "name": "TrackBoost Spotify Promotion",
+  "description": "Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
