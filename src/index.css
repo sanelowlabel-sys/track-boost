@@ -1,25 +1,26 @@
 @import "tailwindcss";
 
-@layer base {
-  body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background-color: #121212;
-    color: #ffffff;
-  }
+@theme {
+  --color-spotify-green: #1DB954;
+  --color-spotify-green-hover: #1ed760;
+  --color-surface: #181818;
+  --color-surface-hover: #282828;
+  
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
 }
 
-/* Custom sleek scrollbar for Spotify-like dark feel */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+body {
+  font-family: var(--font-sans);
 }
-::-webkit-scrollbar-track {
-  background: #121212;
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
 }
-::-webkit-scrollbar-thumb {
-  background: #282828;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #3e3e3e;
+
+.glass-panel {
+  background: rgba(24, 24, 24, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }

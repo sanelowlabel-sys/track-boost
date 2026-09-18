@@ -1,0 +1,135 @@
+import React from 'react';
+
+interface JamBoostLogoProps {
+  className?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  variant?: 'full' | 'icon';
+}
+
+export const JamBoostLogo: React.FC<JamBoostLogoProps> = ({
+  className = '',
+  size = 'sm',
+  variant = 'full',
+}) => {
+  // Balanced refined sizes for crisp UI and comfortable proportions
+  const heightClasses = {
+    xs: 'h-4',
+    sm: 'h-6',
+    md: 'h-7',
+    lg: 'h-8',
+    xl: 'h-10',
+  };
+
+  if (variant === 'icon') {
+    return (
+      <svg
+        viewBox="0 0 100 100"
+        className={`${heightClasses[size]} aspect-square select-none ${className}`}
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="JamBoost Icon"
+      >
+        <rect x="0" y="0" width="100" height="100" rx="4" fill="#82C321" />
+        <path
+          d="M 53 22 H 71 V 62 C 71 73 63 78 50 78 C 37 78 29 71 29 60 H 47 C 47 64 48 66 50 66 C 52 66 53 64 53 61 Z"
+          fill="#111111"
+        />
+      </svg>
+    );
+  }
+
+  // Exact vector reproduction of JAMBOOST2.png:
+  // [J] [Λ] [M] [B] [O] [O] [S] [Γ]
+  return (
+    <div className={`inline-flex items-center ${className}`}>
+      <svg
+        viewBox="0 0 898 100"
+        className={`${heightClasses[size]} w-auto select-none`}
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="JamBoost"
+      >
+        {/* J */}
+        <g transform="translate(0, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            d="M 53 22 H 71 V 62 C 71 73 63 78 50 78 C 37 78 29 71 29 60 H 47 C 47 64 48 66 50 66 C 52 66 53 64 53 61 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* A (Λ - stylized crossbar-less A) */}
+        <g transform="translate(114, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            d="M 50 22 L 74 78 H 58 L 50 54 L 42 78 H 26 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* M */}
+        <g transform="translate(228, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            d="M 24 22 H 39 L 50 56 L 61 22 H 76 V 78 H 63 V 46 L 54 68 H 46 L 37 46 V 78 H 24 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* B */}
+        <g transform="translate(342, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M 26 22 H 58 C 67 22 72 27 72 35 C 72 41 68 45 61 47 C 69 49 74 54 74 63 C 74 73 67 78 56 78 H 26 Z M 41 33 V 44 H 54 C 58 44 60 42 60 38 C 60 35 58 33 54 33 Z M 41 55 V 67 H 55 C 59 67 62 65 62 61 C 62 57 59 55 55 55 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* O */}
+        <g transform="translate(456, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M 50 22 C 65 22 74 33 74 50 C 74 67 65 78 50 78 C 35 78 26 67 26 50 C 26 33 35 22 50 22 Z M 50 34 C 42 34 38 41 38 50 C 38 59 42 66 50 66 C 58 66 62 59 62 50 C 62 41 58 34 50 34 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* O */}
+        <g transform="translate(570, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M 50 22 C 65 22 74 33 74 50 C 74 67 65 78 50 78 C 35 78 26 67 26 50 C 26 33 35 22 50 22 Z M 50 34 C 42 34 38 41 38 50 C 38 59 42 66 50 66 C 58 66 62 59 62 50 C 62 41 58 34 50 34 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* S */}
+        <g transform="translate(684, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            d="M 33 35 C 34 26 42 22 52 22 C 64 22 72 28 72 37 C 72 45 66 49 56 52 L 48 54 C 42 56 39 58 39 62 C 39 66 43 68 50 68 C 57 68 62 65 63 60 H 74 C 73 71 64 78 50 78 C 37 78 27 71 27 61 C 27 52 34 47 44 44 L 52 42 C 58 40 60 38 60 34 C 60 30 56 28 50 28 C 44 28 41 31 40 35 Z"
+            fill="#111111"
+          />
+        </g>
+
+        {/* Γ (Stylized T from JAMBOOST2.png) */}
+        <g transform="translate(798, 0)">
+          <rect x="0" y="0" width="100" height="100" rx="3" fill="#82C321" />
+          <path
+            d="M 28 22 H 72 V 38 H 44 V 78 H 28 Z"
+            fill="#111111"
+          />
+        </g>
+      </svg>
+    </div>
+  );
+};
+export default JamBoostLogo;

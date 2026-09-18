@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none" role="img" aria-label="JamBoost Icon">
+  <defs>
+    <filter id="icon-grunge" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.28" numOctaves="4" result="noise" />
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 7 -2.4" result="textured" />
+      <feComposite in="SourceGraphic" in2="textured" operator="in" />
+    </filter>
+  </defs>
+  <rect x="10" y="10" width="100" height="100" rx="8" fill="#7FB823" />
+  <text x="60" y="85" font-family="'Impact', 'Space Grotesk', 'Arial Black', sans-serif" font-weight="900" font-size="78" fill="#111111" text-anchor="middle" filter="url(#icon-grunge)">J</text>
+</svg>

@@ -3,53 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      (function () {
-        try {
-          var originalFetch = window.fetch ? window.fetch.bind(window) : undefined;
-          var activeFetch = originalFetch;
-          Object.defineProperty(window, 'fetch', {
-            get: function () {
-              return activeFetch;
-            },
-            set: function (newFetch) {
-              activeFetch = typeof newFetch === 'function' ? newFetch : originalFetch;
-            },
-            configurable: true,
-            enumerable: true,
-          });
-        } catch (e) {
-          try {
-            var proto = Object.getPrototypeOf(window);
-            if (proto) {
-              var protoFetch = (window.fetch || proto.fetch) ? (window.fetch || proto.fetch).bind(window) : undefined;
-              var activeProtoFetch = protoFetch;
-              Object.defineProperty(proto, 'fetch', {
-                get: function () {
-                  return activeProtoFetch;
-                },
-                set: function (newFetch) {
-                  activeProtoFetch = typeof newFetch === 'function' ? newFetch : protoFetch;
-                },
-                configurable: true,
-                enumerable: true,
-              });
-            }
-          } catch (e2) {}
-        }
-      })();
-    </script>
-    <title>TrackBoost Spotify Promotion</title>
-    <meta name="description" content="Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics." />
-    <meta property="og:title" content="TrackBoost Spotify Promotion" />
-    <meta property="og:description" content="Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics." />
+    <title>JamBoost</title>
+    <meta name="description" content="JamBoost - Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics." />
+    <link rel="icon" type="image/svg+xml" href="/jamboost-icon.svg" />
+    <meta property="og:title" content="JamBoost" />
+    <meta property="og:description" content="JamBoost - Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-[#121212] text-white selection:bg-[#FF3333] selection:text-white antialiased min-h-screen">
+  <body class="bg-[#121212] text-white selection:bg-[#1DB954] selection:text-white antialiased min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

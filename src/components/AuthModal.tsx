@@ -1,22 +1,32 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { X, Lock, Mail, User, Music, Disc, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { X, Lock, Mail, User, AlertCircle, CheckCircle2, Database, ArrowRight } from 'lucide-react';
+import { JamBoostLogo } from './JamBoostLogo';
+import { signInWithEmail, signUpWithEmail, isSupabaseConfigured, type AuthUser } from '../lib/supabase';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultMode?: 'login' | 'register';
+  onSuccess: (user: AuthUser) => void;
+  initialMode?: 'login' | 'signup';
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultMode = 'login' }) => {
-  const { login, register, loginAsDemo } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>(defaultMode);
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  initialMode = 'login',
+}) => {
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [artistName, setArtistName] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
+  const [configUrl, setConfigUrl] = useState(localStorage.getItem('jamboost_supabase_url') || '');
+  const [configKey, setConfigKey] = useState(localStorage.getItem('jamboost_supabase_key') || '');
+  const [configSaved, setConfigSaved] = useState(false);
 
   if (!isOpen) return null;
 
@@ -27,229 +37,265 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultMo
 
     try {
       if (mode === 'login') {
-        await login(email, password);
+        const result = await signInWithEmail(email, password);
+        if (result.error) {
+          setError(result.error);
+        } else if (result.user) {
+          onSuccess(result.user);
+          onClose();
+        }
       } else {
-        await register(email, password, name, artistName);
+        const result = await signUpWithEmail(email, password, name);
+        if (result.error) {
+          setError(result.error);
+        } else if (result.user) {
+          onSuccess(result.user);
+          onClose();
+        }
       }
-      onClose();
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please check your credentials.');
+      setError(err?.message || 'An unexpected authentication error occurred.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoSignIn = async () => {
+  const handleQuickDemo = async () => {
     setError(null);
     setLoading(true);
-    try {
-      await loginAsDemo();
+    const demoEmail = 'aikenmusique@gmail.com';
+    const demoPass = 'jamboost2026';
+    setEmail(demoEmail);
+    setPassword(demoPass);
+    const result = await signInWithEmail(demoEmail, demoPass);
+    if (result.user) {
+      onSuccess(result.user);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Demo sign in failed.');
-    } finally {
-      setLoading(false);
+    } else if (result.error) {
+      setError(result.error);
     }
+    setLoading(false);
+  };
+
+  const saveSupabaseConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    localStorage.setItem('jamboost_supabase_url', configUrl.trim());
+    localStorage.setItem('jamboost_supabase_key', configKey.trim());
+    setConfigSaved(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 800);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div
-        id="auth-modal-card"
-        className="w-full max-w-md bg-[#181818] border border-[#2b2b2b] rounded-2xl p-6 shadow-2xl relative overflow-hidden"
-      >
-        {/* Top Accent Gradient Bar */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#E50914] via-[#FF3333] to-[#FF6666]" />
-
-        {/* Close Button */}
-        <button
-          id="close-auth-modal-btn"
-          onClick={onClose}
-          className="absolute top-4 right-4 text-[#B3B3B3] hover:text-white p-1 rounded-lg hover:bg-[#222] transition cursor-pointer"
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          className="relative w-full max-w-md bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden"
         >
-          <X className="w-5 h-5" />
-        </button>
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-5 right-5 w-9 h-9 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
 
-        {/* Header */}
-        <div className="text-center mt-2 mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-[#E50914] to-[#FF3333] mb-3 shadow-lg shadow-red-950/40">
-            <Disc className="w-6 h-6 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-white font-['Space_Grotesk']">
-            {mode === 'login' ? 'Welcome to TrackBoost' : 'Create Artist Account'}
-          </h2>
-          <p className="text-sm text-[#B3B3B3] mt-1">
-            {mode === 'login'
-              ? 'Access your Spotify campaign dashboard & real-time analytics'
-              : 'Join top independent artists pitching directly to playlist curators'}
-          </p>
-        </div>
-
-        {/* Fast Demo Login Banner */}
-        <div className="mb-5 p-3 rounded-xl bg-gradient-to-r from-red-950/40 to-neutral-900 border border-red-800/40 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <Sparkles className="w-4 h-4 text-[#FF3333] shrink-0" />
-            <div className="text-left">
-              <p className="text-xs font-semibold text-white">Instant Demo Access</p>
-              <p className="text-[11px] text-[#B3B3B3]">Sanelow Records (Verified Label)</p>
+          {/* Header */}
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <JamBoostLogo size="sm" className="h-6" />
             </div>
+            <h2 className="text-2xl font-bold text-white tracking-tight">
+              {mode === 'login' ? 'Welcome Back' : 'Create an Account'}
+            </h2>
+            <p className="text-sm text-gray-400 mt-1">
+              {mode === 'login'
+                ? 'Sign in to access your Spotify promotion dashboard'
+                : 'Join JamBoost to launch and track your Spotify campaigns'}
+            </p>
           </div>
-          <button
-            id="instant-demo-auth-btn"
-            type="button"
-            onClick={handleDemoSignIn}
-            disabled={loading}
-            className="text-xs font-bold text-white bg-[#FF3333] hover:bg-[#e62e2e] px-3 py-1.5 rounded-lg transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md shadow-[#FF3333]/20"
-          >
-            1-Click Sign In
-          </button>
-        </div>
 
-        {/* Tab Switcher */}
-        <div className="grid grid-cols-2 p-1 bg-[#121212] rounded-xl mb-5 border border-[#252525]">
-          <button
-            type="button"
-            id="auth-mode-login-tab"
-            onClick={() => {
-              setMode('login');
-              setError(null);
-            }}
-            className={`py-2 text-xs font-bold rounded-lg transition-all ${
-              mode === 'login'
-                ? 'bg-[#242424] text-white shadow-sm'
-                : 'text-[#B3B3B3] hover:text-white'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            id="auth-mode-register-tab"
-            onClick={() => {
-              setMode('register');
-              setError(null);
-            }}
-            className={`py-2 text-xs font-bold rounded-lg transition-all ${
-              mode === 'register'
-                ? 'bg-[#242424] text-white shadow-sm'
-                : 'text-[#B3B3B3] hover:text-white'
-            }`}
-          >
-            Register
-          </button>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-950/50 border border-red-700/50 rounded-xl flex items-center space-x-2 text-red-200 text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0 text-[#FF3333]" />
-            <span>{error}</span>
+          {/* Mode Switcher Tabs */}
+          <div className="flex bg-[#121212] p-1 rounded-xl mb-6 border border-white/5">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setError(null);
+              }}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
+                mode === 'login'
+                  ? 'bg-white text-black shadow'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signup');
+                setError(null);
+              }}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
+                mode === 'signup'
+                  ? 'bg-white text-black shadow'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Register
+            </button>
           </div>
-        )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {mode === 'register' && (
-            <>
-              <div>
-                <label className="block text-xs font-semibold text-[#B3B3B3] mb-1">
-                  Full Name / Label Representative
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-3 w-4 h-4 text-[#777]" />
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="Marcus Reid"
-                    className="w-full bg-[#121212] border border-[#2e2e2e] focus:border-[#FF3333] rounded-xl pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-[#555] outline-none transition"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#B3B3B3] mb-1">
-                  Spotify Artist Name (Optional)
-                </label>
-                <div className="relative">
-                  <Music className="absolute left-3.5 top-3 w-4 h-4 text-[#777]" />
-                  <input
-                    type="text"
-                    value={artistName}
-                    onChange={e => setArtistName(e.target.value)}
-                    placeholder="e.g. Neon Horizon"
-                    className="w-full bg-[#121212] border border-[#2e2e2e] focus:border-[#FF3333] rounded-xl pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-[#555] outline-none transition"
-                  />
-                </div>
-              </div>
-            </>
+          {error && (
+            <div className="mb-5 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3 text-red-400 text-sm">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-[#B3B3B3] mb-1">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3.5 top-3 w-4 h-4 text-[#777]" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="artist@example.com"
-                className="w-full bg-[#121212] border border-[#2e2e2e] focus:border-[#FF3333] rounded-xl pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-[#555] outline-none transition"
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-semibold text-[#B3B3B3]">Password</label>
-              {mode === 'login' && (
-                <span className="text-[11px] text-[#777] hover:text-[#B3B3B3] cursor-pointer">
-                  Forgot password?
-                </span>
-              )}
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3.5 top-3 w-4 h-4 text-[#777]" />
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-[#121212] border border-[#2e2e2e] focus:border-[#FF3333] rounded-xl pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-[#555] outline-none transition"
-              />
-            </div>
-          </div>
-
-          <button
-            id="auth-submit-btn"
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 bg-[#FF3333] hover:bg-[#e62e2e] active:scale-[0.99] text-white font-bold text-sm py-3 rounded-xl shadow-lg shadow-[#FF3333]/25 transition disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
-          >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : mode === 'login' ? (
-              <span>Sign In to Dashboard</span>
-            ) : (
-              <span>Create Free Account</span>
+          {/* Main Auth Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Artist or Label Name
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Aiken Musique"
+                    required={mode === 'signup'}
+                    className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                  />
+                </div>
+              </div>
             )}
-          </button>
-        </form>
 
-        <div className="mt-5 pt-4 border-t border-[#252525] text-center">
-          <p className="text-xs text-[#888]">
-            By continuing, you agree to our{' '}
-            <span className="text-[#B3B3B3] hover:underline cursor-pointer">Terms of Promotion</span> and{' '}
-            <span className="text-[#B3B3B3] hover:underline cursor-pointer">Curator Integrity Guidelines</span>.
-          </p>
-        </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                Email Address
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="aikenmusique@gmail.com"
+                  required
+                  className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  minLength={6}
+                  required
+                  className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-12 mt-2 bg-[#82C321] hover:bg-[#8fd524] text-black font-bold rounded-xl flex items-center justify-center gap-2 transition-transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-50"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>{mode === 'login' ? 'Sign In' : 'Create Free Account'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Quick Demo Login Option */}
+          <div className="mt-5 pt-4 border-t border-white/5">
+            <button
+              type="button"
+              onClick={handleQuickDemo}
+              className="w-full py-2.5 px-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <CheckCircle2 className="w-4 h-4 text-[#82C321]" />
+              <span>Quick Demo Sign In (aikenmusique@gmail.com)</span>
+            </button>
+          </div>
+
+          {/* Supabase backend status & settings toggle */}
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowConfig(!showConfig)}
+              className="text-xs text-gray-500 hover:text-gray-400 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>
+                Supabase Auth Status: {isSupabaseConfigured ? 'Connected (Live)' : 'Active (Local & Realtime)'}
+              </span>
+            </button>
+          </div>
+
+          {showConfig && (
+            <form onSubmit={saveSupabaseConfig} className="mt-4 p-4 bg-[#121212] rounded-2xl border border-white/5 space-y-3 text-left">
+              <div className="text-xs font-semibold text-gray-300">Configure Custom Supabase Credentials</div>
+              <div>
+                <label className="text-[11px] text-gray-400">Project URL</label>
+                <input
+                  type="url"
+                  value={configUrl}
+                  onChange={(e) => setConfigUrl(e.target.value)}
+                  placeholder="https://xyzcompany.supabase.co"
+                  className="w-full h-8 px-2.5 text-xs bg-[#181818] border border-white/10 rounded text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-gray-400">Anon Public Key</label>
+                <input
+                  type="text"
+                  value={configKey}
+                  onChange={(e) => setConfigKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                  className="w-full h-8 px-2.5 text-xs bg-[#181818] border border-white/10 rounded text-white"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-1.5 bg-white text-black text-xs font-semibold rounded hover:bg-gray-200 transition-colors"
+              >
+                {configSaved ? 'Saved! Reloading...' : 'Save & Connect Supabase'}
+              </button>
+            </form>
+          )}
+        </motion.div>
       </div>
-    </div>
+    </AnimatePresence>
   );
 };
