@@ -2,12 +2,31 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Ignore Vite HMR WebSocket connection errors per environment guidelines
+      window.addEventListener('unhandledrejection', function(e) {
+        if (e.reason && (
+          (typeof e.reason.message === 'string' && e.reason.message.includes('WebSocket')) ||
+          (typeof e.reason.stack === 'string' && e.reason.stack.includes('createWebSocketModuleRunnerTransport'))
+        )) {
+          e.preventDefault();
+        }
+      });
+      window.addEventListener('error', function(e) {
+        if (
+          (typeof e.message === 'string' && e.message.includes('WebSocket')) ||
+          (typeof e.filename === 'string' && e.filename.includes('@vite/client'))
+        ) {
+          e.preventDefault();
+        }
+      });
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JamBoost</title>
-    <meta name="description" content="JamBoost - Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics." />
+    <meta name="description" content="JamBoost pitches your music to independent playlist curators. Transparent campaign tracking, zero stream guarantees, and direct artist support." />
     <link rel="icon" type="image/svg+xml" href="/jamboost-icon.svg" />
     <meta property="og:title" content="JamBoost" />
-    <meta property="og:description" content="JamBoost - Real-time music promotion platform for Spotify playlist placements, saves, and followers with live submission tracking and analytics." />
+    <meta property="og:description" content="JamBoost pitches your music to independent playlist curators. Transparent campaign tracking, zero stream guarantees, and direct artist support." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
