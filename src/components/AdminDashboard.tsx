@@ -27,6 +27,8 @@ import {
 import type { Submission, SubmissionStatus, CampaignTier } from '../types';
 import { supabase, type AuthUser } from '../lib/supabase';
 import { PLANS } from '../types';
+import { useModalA11y } from '../hooks/useModalA11y';
+import { PageSeo } from './PageSeo';
 
 interface AdminDashboardProps {
   currentUser: AuthUser;
@@ -52,6 +54,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
   // Selected Submission for Detail / Edit Modal
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
 
+  const modalRef = useModalA11y<HTMLDivElement>({
+    isOpen: Boolean(selectedSubmission),
+    onClose: () => setSelectedSubmission(null),
+  });
+
   // Modal State for Manual Metrics Form
   const [editStreams, setEditStreams] = useState<number>(0);
   const [editSaves, setEditSaves] = useState<number>(0);
@@ -69,6 +76,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
 
   // State Transition Loading
   const [transitioning, setTransitioning] = useState(false);
+  const [workflowMsg, setWorkflowMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   // Artwork cache for submissions (url -> artworkUrl)
   const [artworkMap, setArtworkMap] = useState<Record<string, string>>({});
@@ -108,13 +116,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
     setError(null);
 
     try {
-      // First attempt to fetch with PostgREST join on profiles
+      // Fetch with PostgREST join on profiles via foreign key
       let subsData: any[] | null = null;
       let profilesMap: Record<string, { display_name?: string; email?: string }> = {};
 
       const { data: joinedData, error: joinErr } = await supabase
         .from('submissions')
-        .select('*, profiles:user_id(display_name, email)')
+        .select('*, profiles(display_name, email)')
         .order('created_at', { ascending: false });
 
       if (!joinErr && joinedData) {
@@ -342,11 +350,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
     }
 
     if (!isValid) {
-      alert(`Invalid transition: Cannot move from ${currentStatus} to ${newStatus}. Transitions must strictly follow: Pending -> Approved -> Live -> Completed.`);
+      setWorkflowMsg({
+        type: 'error',
+        text: `Invalid transition: Cannot move from ${currentStatus} to ${newStatus}. Transitions must strictly follow: Pending -> Approved -> Live -> Completed.`,
+      });
       return;
     }
 
     setTransitioning(true);
+    setWorkflowMsg(null);
     try {
       const updatePayload: Record<string, any> = {
         status: newStatus,
@@ -357,27 +369,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
         updatePayload.notes = requiredNotes;
       }
 
-      const { data, error: updateErr } = await supabase
-        .from('submissions')
-        .update(updatePayload)
-        .eq('id', selectedSubmission.id)
-        .select()
-        .single();
+      let updatedSub: any = { ...selectedSubmission, ...updatePayload };
+      const session = (await supabase?.auth.getSession())?.data.session;
 
-      if (updateErr) {
-        throw updateErr;
+      if (session?.access_token) {
+        const res = await fetch(`/api/admin/submissions/${selectedSubmission.id}/transition`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ status: newStatus, notes: requiredNotes }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to update status (HTTP ${res.status})`);
+        }
+        const resData = await res.json();
+        if (resData.submission) {
+          updatedSub = {
+            ...updatedSub,
+            ...resData.submission,
+            profiles: selectedSubmission.profiles,
+          };
+        }
+      } else {
+        const { error: updateErr } = await supabase
+          .from('submissions')
+          .update(updatePayload)
+          .eq('id', selectedSubmission.id);
+
+        if (updateErr) {
+          throw updateErr;
+        }
       }
 
       // Update local state
-      const updatedSub = { ...selectedSubmission, ...updatePayload };
       setSelectedSubmission(updatedSub);
       setSubmissions((prev) =>
         prev.map((s) => (s.id === selectedSubmission.id ? { ...s, ...updatePayload } : s))
       );
+      setWorkflowMsg({ type: 'success', text: `Campaign successfully moved to "${newStatus}".` });
       setSaveSuccessMsg(`Campaign successfully moved to "${newStatus}".`);
       setTimeout(() => setSaveSuccessMsg(null), 3500);
     } catch (err: any) {
       console.error('Status transition error:', err);
+      setWorkflowMsg({ type: 'error', text: err?.message || 'Failed to update campaign status.' });
       setSaveErrorMsg(err?.message || 'Failed to update campaign status.');
       setTimeout(() => setSaveErrorMsg(null), 4000);
     } finally {
@@ -497,6 +535,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
 
   return (
     <div className="py-8 px-4 sm:px-6 max-w-7xl mx-auto space-y-8">
+      <PageSeo
+        title="Admin Console – JamBoost"
+        description="JamBoost staff curator administration portal."
+        path="/admin"
+      />
       {/* Admin Header Strip */}
       <div className="bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xl">
         <div>
@@ -717,114 +760,184 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[#141414] text-xs uppercase tracking-wider text-gray-400 border-b border-white/5">
-                <tr>
-                  <th className="py-4 px-6 font-semibold">Release</th>
-                  <th className="py-4 px-6 font-semibold">Artist / User</th>
-                  <th className="py-4 px-6 font-semibold">Plan</th>
-                  <th className="py-4 px-6 font-semibold">Status</th>
-                  <th className="py-4 px-6 font-semibold">Reported Streams</th>
-                  <th className="py-4 px-6 font-semibold">Date Submitted</th>
-                  <th className="py-4 px-6 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {filteredSubmissions.map((sub) => {
-                  const cover = artworkMap[sub.spotify_url] || sub.image_url || sub.cover_image_url;
+          <div>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-[#141414] text-xs uppercase tracking-wider text-gray-400 border-b border-white/5">
+                  <tr>
+                    <th className="py-4 px-6 font-semibold">Release</th>
+                    <th className="py-4 px-6 font-semibold">Artist / User</th>
+                    <th className="py-4 px-6 font-semibold">Plan</th>
+                    <th className="py-4 px-6 font-semibold">Status</th>
+                    <th className="py-4 px-6 font-semibold">Reported Streams</th>
+                    <th className="py-4 px-6 font-semibold">Date Submitted</th>
+                    <th className="py-4 px-6 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredSubmissions.map((sub) => {
+                    const cover = sub.image_url || artworkMap[sub.spotify_url] || sub.cover_image_url;
 
-                  return (
-                    <tr
-                      key={sub.id}
-                      className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
-                      onClick={() => setSelectedSubmission(sub)}
-                    >
-                      {/* Release */}
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          {cover ? (
-                            <img
-                              src={cover}
-                              alt={sub.title}
-                              className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-xl bg-[#222] flex items-center justify-center text-white shrink-0 border border-white/5">
-                              <Music2 className="w-4 h-4 text-gray-400" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className="font-bold text-white group-hover:text-[#82C321] transition-colors flex items-center gap-2 truncate">
-                              <span className="truncate">{sub.title}</span>
-                              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-300 shrink-0">
-                                {sub.item_type}
-                              </span>
-                            </div>
-                            <div className="text-xs text-gray-400 truncate">
-                              {sub.artist} • <span className="text-gray-500">{sub.genre}</span>
+                    return (
+                      <tr
+                        key={sub.id}
+                        className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
+                        onClick={() => setSelectedSubmission(sub)}
+                      >
+                        {/* Release */}
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-3">
+                            {cover ? (
+                              <img
+                                src={cover}
+                                alt={sub.title}
+                                className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-[#222] flex items-center justify-center text-white shrink-0 border border-white/5">
+                                <Music2 className="w-4 h-4 text-gray-400" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-bold text-white group-hover:text-[#82C321] transition-colors flex items-center gap-2 truncate">
+                                <span className="truncate">{sub.title}</span>
+                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-300 shrink-0">
+                                  {sub.item_type}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-400 truncate">
+                                {sub.artist} • <span className="text-gray-500">{sub.genre}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* User / Submitter */}
-                      <td className="py-4 px-6">
-                        <div className="font-semibold text-white truncate max-w-[150px]">
-                          {sub.profiles?.display_name || sub.display_name || 'Artist'}
-                        </div>
-                        <div className="text-xs text-gray-500 truncate max-w-[150px]">
-                          {sub.profiles?.email || sub.user_email || '—'}
-                        </div>
-                      </td>
+                        {/* User / Submitter */}
+                        <td className="py-4 px-6">
+                          <div className="font-semibold text-white truncate max-w-[150px]">
+                            {sub.profiles?.display_name || sub.display_name || 'Artist'}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate max-w-[150px]">
+                            {sub.profiles?.email || sub.user_email || '—'}
+                          </div>
+                        </td>
 
-                      {/* Plan */}
-                      <td className="py-4 px-6 whitespace-nowrap">
-                        <span className="font-bold text-white">{sub.plan}</span>
-                        <div className="text-xs text-gray-400">
-                          {PLANS[sub.plan]?.priceDisplay || '$89'} USD
+                        {/* Plan */}
+                        <td className="py-4 px-6 whitespace-nowrap">
+                          <span className="font-bold text-white">{sub.plan}</span>
+                          <div className="text-xs text-gray-400">
+                            {PLANS[sub.plan]?.priceDisplay || '$89'} USD
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-4 px-6 whitespace-nowrap">
+                          {getStatusBadge(sub.status)}
+                        </td>
+
+                        {/* Reported Streams Progress */}
+                        <td className="py-4 px-6 whitespace-nowrap">
+                          <div className="font-bold text-white">
+                            {(sub.delivered_streams || 0).toLocaleString()}{' '}
+                            <span className="text-xs font-normal text-gray-500">
+                              / {(sub.target_streams || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {sub.playlists_added || 0} lists • {sub.saves_count || 0} saves
+                          </div>
+                        </td>
+
+                        {/* Date */}
+                        <td className="py-4 px-6 text-xs text-gray-400 whitespace-nowrap">
+                          {sub.created_at ? new Date(sub.created_at).toLocaleDateString() : '—'}
+                        </td>
+
+                        {/* Action */}
+                        <td className="py-4 px-6 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setSelectedSubmission(sub)}
+                              className="px-3 py-1.5 bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold rounded-xl transition-transform hover:scale-[1.02] cursor-pointer shadow-sm"
+                            >
+                              Manage
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Stacked Cards View (No horizontal scroll at 360px) */}
+            <div className="md:hidden flex flex-col divide-y divide-white/5">
+              {filteredSubmissions.map((sub) => {
+                const cover = sub.image_url || artworkMap[sub.spotify_url] || sub.cover_image_url;
+
+                return (
+                  <div
+                    key={sub.id}
+                    className="p-4 space-y-3 cursor-pointer hover:bg-white/[0.02]"
+                    onClick={() => setSelectedSubmission(sub)}
+                  >
+                    <div className="flex items-start gap-3">
+                      {cover ? (
+                        <img
+                          src={cover}
+                          alt={sub.title}
+                          className="w-12 h-12 rounded-xl object-cover shrink-0 border border-white/10"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[#222] flex items-center justify-center text-white shrink-0 border border-white/5">
+                          <Music2 className="w-5 h-5 text-gray-400" />
                         </div>
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-4 px-6 whitespace-nowrap">
-                        {getStatusBadge(sub.status)}
-                      </td>
-
-                      {/* Reported Streams Progress */}
-                      <td className="py-4 px-6 whitespace-nowrap">
-                        <div className="font-bold text-white">
-                          {(sub.delivered_streams || 0).toLocaleString()}{' '}
-                          <span className="text-xs font-normal text-gray-500">
-                            / {(sub.target_streams || 0).toLocaleString()}
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-white flex items-center gap-2 truncate">
+                          <span className="truncate">{sub.title}</span>
+                          <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-300 shrink-0">
+                            {sub.item_type}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-400">
-                          {sub.playlists_added || 0} lists • {sub.saves_count || 0} saves
+                        <div className="text-xs text-gray-400 truncate">
+                          {sub.artist} • <span className="text-gray-500">{sub.genre}</span>
                         </div>
-                      </td>
+                        <div className="text-xs text-gray-400 mt-1 truncate">
+                          User: <strong className="text-white">{sub.profiles?.display_name || sub.display_name || 'Artist'}</strong>
+                          {sub.profiles?.email ? ` (${sub.profiles.email})` : ''}
+                        </div>
+                      </div>
+                    </div>
 
-                      {/* Date */}
-                      <td className="py-4 px-6 text-xs text-gray-400 whitespace-nowrap">
+                    <div className="flex items-center justify-between text-xs bg-[#121212] p-2.5 rounded-xl border border-white/5">
+                      <div>
+                        <span className="font-bold text-white">{sub.plan}</span>
+                        <span className="text-gray-400 ml-1.5">({PLANS[sub.plan]?.priceDisplay || '$89'} USD)</span>
+                      </div>
+                      <div>{getStatusBadge(sub.status)}</div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-gray-500 font-mono text-[11px]">
                         {sub.created_at ? new Date(sub.created_at).toLocaleDateString() : '—'}
-                      </td>
-
-                      {/* Action */}
-                      <td className="py-4 px-6 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setSelectedSubmission(sub)}
-                            className="px-3 py-1.5 bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold rounded-xl transition-transform hover:scale-[1.02] cursor-pointer shadow-sm"
-                          >
-                            Manage
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSubmission(sub);
+                        }}
+                        className="px-3 py-1 bg-[#82C321] text-black text-xs font-bold rounded-lg cursor-pointer"
+                      >
+                        Manage Campaign
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -834,15 +947,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
         <AnimatePresence>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
             <motion.div
+              ref={modalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-modal-title"
+              tabIndex={-1}
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
-              className="relative w-full max-w-3xl bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl text-white max-h-[92vh] flex flex-col space-y-6"
+              className="relative w-full max-w-3xl bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl text-white max-h-[92vh] flex flex-col space-y-6 focus:outline-none"
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between border-b border-white/5 pb-4">
                 <div className="flex items-center gap-3">
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#82C321]/20 text-[#82C321] text-xs font-bold uppercase tracking-wider">
+                  <span id="admin-modal-title" className="px-2.5 py-0.5 rounded-full bg-[#82C321]/20 text-[#82C321] text-xs font-bold uppercase tracking-wider">
                     Admin Campaign Review
                   </span>
                   <span className="text-xs text-gray-500 font-mono">
@@ -863,9 +981,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
                 {/* Release Card with Cover Art, Spotify Link, Artist, Genre, Territory, Plan, Payment Status */}
                 <div className="p-5 bg-[#121212] rounded-2xl border border-white/5 space-y-4">
                   <div className="flex flex-col sm:flex-row items-start gap-4">
-                    {artworkMap[selectedSubmission.spotify_url] || selectedSubmission.image_url || selectedSubmission.cover_image_url ? (
+                    {selectedSubmission.image_url || artworkMap[selectedSubmission.spotify_url] || selectedSubmission.cover_image_url ? (
                       <img
-                        src={artworkMap[selectedSubmission.spotify_url] || selectedSubmission.image_url || selectedSubmission.cover_image_url}
+                        src={selectedSubmission.image_url || artworkMap[selectedSubmission.spotify_url] || selectedSubmission.cover_image_url}
                         alt={selectedSubmission.title}
                         className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover shrink-0 border border-white/10 shadow-lg"
                       />
@@ -965,6 +1083,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) =
                     </div>
                     <div>{getStatusBadge(selectedSubmission.status)}</div>
                   </div>
+
+                  {/* In-page workflow transition message banner */}
+                  {workflowMsg && (
+                    <div className={`p-3 rounded-xl text-xs flex items-center justify-between gap-2 ${
+                      workflowMsg.type === 'error'
+                        ? 'bg-red-500/10 border border-red-500/30 text-red-400'
+                        : 'bg-[#82C321]/15 border border-[#82C321]/30 text-[#82C321]'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        {workflowMsg.type === 'error' ? (
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <Check className="w-4 h-4 shrink-0 stroke-[3]" />
+                        )}
+                        <span>{workflowMsg.text}</span>
+                      </div>
+                      <button
+                        onClick={() => setWorkflowMsg(null)}
+                        className="p-1 rounded text-gray-400 hover:text-white cursor-pointer"
+                        aria-label="Dismiss message"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Transition Action Buttons */}
                   <div className="pt-2 flex flex-wrap items-center gap-3">

@@ -19,6 +19,8 @@ import {
 import type { Submission, SubmissionStatus } from '../types';
 import { PLANS } from '../types';
 import { supabase, type AuthUser } from '../lib/supabase';
+import { useModalA11y } from '../hooks/useModalA11y';
+import { PageSeo } from './PageSeo';
 
 interface UserDashboardProps {
   user: AuthUser;
@@ -50,11 +52,28 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   // Payment result banner from return URL (?payment=success / ?payment=cancelled)
   const [paymentBanner, setPaymentBanner] = useState<'success' | 'cancelled' | null>(null);
+  const [paymentConfirming, setPaymentConfirming] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   // Pay Now Modal State
   const [paySubmission, setPaySubmission] = useState<Submission | null>(null);
   const [payingLoading, setPayingLoading] = useState(false);
   const [payingError, setPayingError] = useState<string | null>(null);
+
+  const detailModalRef = useModalA11y<HTMLDivElement>({
+    isOpen: Boolean(selectedSubmission),
+    onClose: () => setSelectedSubmission(null),
+  });
+
+  const payModalRef = useModalA11y<HTMLDivElement>({
+    isOpen: Boolean(paySubmission),
+    onClose: () => {
+      if (!payingLoading) {
+        setPaySubmission(null);
+        setPayingError(null);
+      }
+    },
+  });
 
   // Load submissions from Supabase and subscribe to changes filtered by user_id
   const loadSubmissions = async () => {
@@ -86,8 +105,48 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const paymentStatus = params.get('payment');
+      const orderToken = params.get('token') || params.get('order_id');
+
       if (paymentStatus === 'success') {
-        setPaymentBanner('success');
+        if (orderToken) {
+          // Requirement 2: Call POST /api/checkout/capture and show confirming state
+          setPaymentConfirming(true);
+          setCaptureError(null);
+
+          supabase?.auth.getSession().then(async ({ data: { session } }) => {
+            if (!session?.access_token) {
+              setPaymentConfirming(false);
+              setCaptureError('User session expired. Please sign in to verify payment.');
+              return;
+            }
+
+            try {
+              const res = await fetch('/api/checkout/capture', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ order_id: orderToken }),
+              });
+
+              const data = await res.json();
+              if (res.ok && data.success) {
+                setPaymentConfirming(false);
+                setPaymentBanner('success');
+                loadSubmissions();
+              } else {
+                setPaymentConfirming(false);
+                setCaptureError(data.error || 'Payment confirmation failed. Please contact support.');
+              }
+            } catch (err: any) {
+              setPaymentConfirming(false);
+              setCaptureError(err?.message || 'Network error while confirming PayPal payment.');
+            }
+          });
+        } else {
+          setPaymentBanner('success');
+        }
       } else if (paymentStatus === 'cancelled') {
         setPaymentBanner('cancelled');
       }
@@ -273,6 +332,53 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   return (
     <div className="py-10 px-4 sm:px-6 max-w-7xl mx-auto space-y-8">
+      {/* Payment Confirming Banner */}
+      {paymentConfirming && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 rounded-3xl border bg-blue-500/15 border-blue-500/40 text-white flex items-start justify-between gap-4 shadow-xl"
+        >
+          <div className="flex items-start gap-3.5">
+            <div className="w-9 h-9 rounded-2xl bg-blue-500 text-white flex items-center justify-center shrink-0 mt-0.5">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Payment is being confirmed</h3>
+              <p className="text-xs text-gray-300 mt-1 max-w-2xl leading-relaxed">
+                We are capturing your PayPal order and updating your campaign. Please hold on...
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Capture Error Banner */}
+      {captureError && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 rounded-3xl border bg-red-500/15 border-red-500/40 text-white flex items-start justify-between gap-4 shadow-xl"
+        >
+          <div className="flex items-start gap-3.5">
+            <div className="w-9 h-9 rounded-2xl bg-red-500 text-white flex items-center justify-center shrink-0 mt-0.5">
+              <AlertCircle className="w-5 h-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Payment Confirmation Failed</h3>
+              <p className="text-xs text-red-200 mt-1 max-w-2xl leading-relaxed">{captureError}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCaptureError(null)}
+            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="Dismiss error"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </motion.div>
+      )}
+
       {/* Payment Result Banner */}
       {paymentBanner && (
         <motion.div
@@ -502,134 +608,248 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             </button>
           </div>
         ) : (
-          /* Submissions Table */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[#141414] text-xs uppercase tracking-wider text-gray-400 border-b border-white/5">
-                <tr>
-                  <th className="py-4 px-6 font-semibold">Track / Release</th>
-                  <th className="py-4 px-6 font-semibold">Campaign Tier</th>
-                  <th className="py-4 px-6 font-semibold">Status</th>
-                  <th className="py-4 px-6 font-semibold">
-                    Streams Progress
-                    <span className="block text-[10px] text-gray-500 font-normal">Reported by JamBoost</span>
-                  </th>
-                  <th className="py-4 px-6 font-semibold">
-                    Playlists
-                    <span className="block text-[10px] text-gray-500 font-normal">Reported by JamBoost</span>
-                  </th>
-                  <th className="py-4 px-6 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {filteredSubmissions.map((sub) => {
-                  const progressPct = Math.min(
-                    100,
-                    Math.round(((sub.delivered_streams || 0) / (sub.target_streams || 1)) * 100)
-                  );
+          <div>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-[#141414] text-xs uppercase tracking-wider text-gray-400 border-b border-white/5">
+                  <tr>
+                    <th className="py-4 px-6 font-semibold">Track / Release</th>
+                    <th className="py-4 px-6 font-semibold">Campaign Tier</th>
+                    <th className="py-4 px-6 font-semibold">Status</th>
+                    <th className="py-4 px-6 font-semibold">
+                      Streams Progress
+                      <span className="block text-[10px] text-gray-500 font-normal">Reported by JamBoost</span>
+                    </th>
+                    <th className="py-4 px-6 font-semibold">
+                      Playlists
+                      <span className="block text-[10px] text-gray-500 font-normal">Reported by JamBoost</span>
+                    </th>
+                    <th className="py-4 px-6 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredSubmissions.map((sub) => {
+                    const progressPct = Math.min(
+                      100,
+                      Math.round(((sub.delivered_streams || 0) / (sub.target_streams || 1)) * 100)
+                    );
 
-                  return (
-                    <tr
-                      key={sub.id}
-                      className="hover:bg-white/[0.02] transition-colors group"
-                    >
-                      {/* Track info */}
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-[#222] flex items-center justify-center text-white shrink-0 border border-white/5">
-                            <Play className="w-4 h-4 fill-white" />
-                          </div>
-                          <div>
-                            <div className="font-bold text-white group-hover:text-[#82C321] transition-colors flex items-center gap-2">
-                              <span>{sub.title}</span>
-                              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-300">
-                                {sub.item_type}
-                              </span>
+                    return (
+                      <tr
+                        key={sub.id}
+                        className="hover:bg-white/[0.02] transition-colors group"
+                      >
+                        {/* Track info */}
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-3">
+                            {sub.image_url ? (
+                              <img
+                                src={sub.image_url}
+                                alt={sub.title}
+                                className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10 shadow-sm"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-[#222] flex items-center justify-center text-white shrink-0 border border-white/5">
+                                <Play className="w-4 h-4 fill-white" />
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-bold text-white group-hover:text-[#82C321] transition-colors flex items-center gap-2">
+                                <span>{sub.title}</span>
+                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-300">
+                                  {sub.item_type}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {sub.artist} • <span className="text-gray-500">{sub.genre}</span>
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-400">
-                              {sub.artist} • <span className="text-gray-500">{sub.genre}</span>
-                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Tier */}
-                      <td className="py-4 px-6">
-                        <span className="font-semibold text-white">{sub.plan}</span>
-                        <span className="block text-xs text-gray-500">
-                          {PLANS[sub.plan]?.curatorsPitched ? `${PLANS[sub.plan].curatorsPitched} curators` : 'Curator Pitch'}
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-4 px-6 whitespace-nowrap">
-                        {getStatusBadge(sub.status)}
-                      </td>
-
-                      {/* Progress */}
-                      <td className="py-4 px-6 min-w-[180px]">
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-bold text-white">
-                            {(sub.delivered_streams || 0).toLocaleString()}
+                        {/* Tier */}
+                        <td className="py-4 px-6">
+                          <span className="font-semibold text-white">{sub.plan}</span>
+                          <span className="block text-xs text-gray-500">
+                            {PLANS[sub.plan]?.curatorsPitched ? `${PLANS[sub.plan].curatorsPitched} curators` : 'Curator Pitch'}
                           </span>
-                          <span className="text-gray-400 font-medium">{progressPct}%</span>
-                        </div>
-                        <div className="w-full h-2 bg-[#222] rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              sub.status === 'Completed'
-                                ? 'bg-purple-400'
-                                : 'bg-[#82C321]'
-                            }`}
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Playlists & Saves */}
-                      <td className="py-4 px-6 whitespace-nowrap">
-                        <div className="text-white font-bold">{sub.playlists_added || 0} lists</div>
-                        <div className="text-xs text-gray-400">{sub.saves_count || 0} saves</div>
-                      </td>
+                        {/* Status */}
+                        <td className="py-4 px-6 whitespace-nowrap">
+                          {getStatusBadge(sub.status)}
+                        </td>
 
-                      {/* Actions */}
-                      <td className="py-4 px-6 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-2">
-                          {sub.status === 'Awaiting payment' && (
-                            <button
-                              onClick={() => {
-                                setPaySubmission(sub);
-                                setPayingError(null);
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold inline-flex items-center gap-1.5 transition-transform hover:scale-[1.02] cursor-pointer shadow-sm"
-                              title="Complete PayPal payment"
+                        {/* Progress */}
+                        <td className="py-4 px-6 min-w-[180px]">
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="font-bold text-white">
+                              {(sub.delivered_streams || 0).toLocaleString()}
+                            </span>
+                            <span className="text-gray-400 font-medium">{progressPct}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-[#222] rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                sub.status === 'Completed'
+                                  ? 'bg-purple-400'
+                                  : 'bg-[#82C321]'
+                              }`}
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        </td>
+
+                        {/* Playlists & Saves */}
+                        <td className="py-4 px-6 whitespace-nowrap">
+                          <div className="text-white font-bold">{sub.playlists_added || 0} lists</div>
+                          <div className="text-xs text-gray-400">{sub.saves_count || 0} saves</div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-4 px-6 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-2">
+                            {sub.status === 'Awaiting payment' && (
+                              <button
+                                onClick={() => {
+                                  setPaySubmission(sub);
+                                  setPayingError(null);
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold inline-flex items-center gap-1.5 transition-transform hover:scale-[1.02] cursor-pointer shadow-sm"
+                                title="Complete PayPal payment"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Pay now</span>
+                              </button>
+                            )}
+                            <a
+                              href={sub.spotify_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
+                              title="Open on Spotify"
                             >
-                              <CreditCard className="w-3.5 h-3.5" />
-                              <span>Pay now</span>
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                            <button
+                              onClick={() => setSelectedSubmission(sub)}
+                              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                            >
+                              Details
                             </button>
-                          )}
-                          <a
-                            href={sub.spotify_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
-                            title="Open on Spotify"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                          <button
-                            onClick={() => setSelectedSubmission(sub)}
-                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                          >
-                            Details
-                          </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Stacked Cards View (No horizontal scroll at 360px) */}
+            <div className="md:hidden flex flex-col divide-y divide-white/5">
+              {filteredSubmissions.map((sub) => {
+                const progressPct = Math.min(
+                  100,
+                  Math.round(((sub.delivered_streams || 0) / (sub.target_streams || 1)) * 100)
+                );
+
+                return (
+                  <div key={sub.id} className="p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      {sub.image_url ? (
+                        <img
+                          src={sub.image_url}
+                          alt={sub.title}
+                          className="w-12 h-12 rounded-xl object-cover shrink-0 border border-white/10 shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[#222] flex items-center justify-center text-white shrink-0 border border-white/5">
+                          <Play className="w-4 h-4 fill-white" />
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-white flex items-center gap-2 truncate">
+                          <span className="truncate">{sub.title}</span>
+                          <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-300 shrink-0">
+                            {sub.item_type}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-400 truncate">
+                          {sub.artist} • <span className="text-gray-500">{sub.genre}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {getStatusBadge(sub.status)}
+                          <span className="text-xs font-semibold text-white px-2 py-0.5 rounded bg-white/5">
+                            {sub.plan}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress summary */}
+                    <div className="bg-[#121212] p-3 rounded-xl border border-white/5 space-y-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-400">Streams (reported by JamBoost):</span>
+                        <span className="font-bold text-white">
+                          {(sub.delivered_streams || 0).toLocaleString()} <span className="text-gray-500 font-normal">/ {(sub.target_streams || 0).toLocaleString()}</span>
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-[#222] rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            sub.status === 'Completed' ? 'bg-purple-400' : 'bg-[#82C321]'
+                          }`}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-gray-400 pt-1">
+                        <span>Playlists: <strong className="text-white">{sub.playlists_added || 0}</strong></span>
+                        <span>Saves: <strong className="text-white">{sub.saves_count || 0}</strong></span>
+                      </div>
+                    </div>
+
+                    {/* Mobile Card Actions */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="text-[11px] text-gray-500 font-mono">
+                        {new Date(sub.created_at).toLocaleDateString()}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {sub.status === 'Awaiting payment' && (
+                          <button
+                            onClick={() => {
+                              setPaySubmission(sub);
+                              setPayingError(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Pay now</span>
+                          </button>
+                        )}
+                        <a
+                          href={sub.spotify_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
+                          title="Open on Spotify"
+                          aria-label="Open track on Spotify"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                        <button
+                          onClick={() => setSelectedSubmission(sub)}
+                          className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                        >
+                          Details
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -639,26 +859,45 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         <AnimatePresence>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
             <motion.div
+              ref={detailModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="user-detail-modal-title"
+              tabIndex={-1}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               className="w-full max-w-lg bg-[#181818] border border-white/10 rounded-3xl p-6 shadow-2xl text-white space-y-5"
             >
               <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                <h3 className="text-xl font-bold">Campaign Details</h3>
+                <h3 id="user-detail-modal-title" className="text-xl font-bold">Campaign Details</h3>
                 <button
                   onClick={() => setSelectedSubmission(null)}
                   className="p-1 rounded-full text-gray-400 hover:text-white cursor-pointer"
+                  aria-label="Close modal"
                 >
                   ✕
                 </button>
               </div>
 
               <div className="space-y-4 text-sm">
-                <div>
-                  <div className="text-xs text-gray-400 font-semibold uppercase">Song / Release</div>
-                  <div className="text-lg font-bold text-white">{selectedSubmission.title}</div>
-                  <div className="text-gray-400">{selectedSubmission.artist}</div>
+                <div className="flex items-center gap-4">
+                  {selectedSubmission.image_url ? (
+                    <img
+                      src={selectedSubmission.image_url}
+                      alt={selectedSubmission.title}
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shrink-0 border border-white/10 shadow-lg"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                      <Music2 className="w-8 h-8 text-gray-500" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs text-gray-400 font-semibold uppercase">Song / Release</div>
+                    <div className="text-lg font-bold text-white truncate">{selectedSubmission.title}</div>
+                    <div className="text-gray-400 text-sm truncate">{selectedSubmission.artist}</div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 p-4 bg-[#121212] rounded-2xl border border-white/5">
@@ -751,6 +990,11 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         <AnimatePresence>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
             <motion.div
+              ref={payModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pay-modal-title"
+              tabIndex={-1}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -761,7 +1005,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   <div className="w-8 h-8 rounded-xl bg-[#82C321]/15 text-[#82C321] flex items-center justify-center">
                     <CreditCard className="w-4 h-4" />
                   </div>
-                  <h3 className="text-lg font-bold text-white">Complete Campaign Payment</h3>
+                  <h3 id="pay-modal-title" className="text-lg font-bold text-white">Complete Campaign Payment</h3>
                 </div>
                 <button
                   onClick={() => {

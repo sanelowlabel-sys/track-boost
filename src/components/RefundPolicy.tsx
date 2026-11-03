@@ -1,20 +1,33 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ShieldCheck, ArrowLeft, CheckCircle2, AlertCircle, Mail, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { JamBoostLogo } from './JamBoostLogo';
+import { PageSeo } from './PageSeo';
 
 interface RefundPolicyProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export const RefundPolicy: React.FC<RefundPolicyProps> = ({ onBack }) => {
+  const navigate = useNavigate();
+  const handleBack = () => {
+    if (onBack) onBack();
+    else navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-[#0E0E0E] text-white selection:bg-[#82C321] selection:text-black py-12 px-4 sm:px-6">
+      <PageSeo
+        title="Refund Policy – JamBoost"
+        description="Learn about our 100% Curator Rejection Guarantee and transparent refund policy."
+        path="/refunds"
+      />
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Navigation & Header */}
         <div className="flex items-center justify-between border-b border-white/5 pb-6">
           <button
-            onClick={onBack}
+            onClick={handleBack}
             className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />

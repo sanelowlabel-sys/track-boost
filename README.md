@@ -4,26 +4,74 @@ JamBoost pitches artist releases directly to independent Spotify playlist curato
 
 ---
 
-## 1. Required Secrets & Environment Variables
+## 1. Environment Variables & Secret Separation
 
-Configure these environment variables in your `.env` or deployment environment:
+All secrets are strictly confined to the backend server runtime (`server.ts` and `server/email.ts`). **No secret ever appears in any file under `src/`, in the client-side JavaScript bundle, or across the browser network tab.** Only variables prefixed with `VITE_` are exposed to the browser.
 
-| Variable | Scope | Description |
-| :--- | :--- | :--- |
-| `APP_URL` | Server | Public URL where this applet is hosted (e.g. `https://your-domain.com` or `http://localhost:3000`). |
-| `VITE_SUPABASE_URL` | Client & Server | The URL of your Supabase project (e.g. `https://xyz.supabase.co`). |
-| `VITE_SUPABASE_ANON_KEY` | Client & Server | Public Supabase anon key for client-side authentication and RLS-protected queries. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server Only | Secret service role key used by the server to verify tokens and insert payments / update submissions. |
-| `SPOTIFY_CLIENT_ID` | Server Only | Spotify Developer Client ID for fetching track/album/playlist metadata. |
-| `SPOTIFY_CLIENT_SECRET` | Server Only | Spotify Developer Client Secret (used in Client Credentials flow). |
-| `PAYPAL_CLIENT_ID` | Server Only | PayPal REST App Client ID (Sandbox or Live). |
-| `PAYPAL_CLIENT_SECRET` | Server Only | PayPal REST App Secret. |
-| `PAYPAL_WEBHOOK_ID` | Server Only | PayPal Webhook ID registered for signature verification. |
-| `PAYPAL_MODE` | Server Only | Environment mode: `sandbox` (default) or `production`. |
+| Variable | Side / Runtime | Visibility | Description |
+| :--- | :--- | :--- | :--- |
+| `APP_URL` | Server | **Server Config** | Base URL of the deployed application (e.g. `https://your-domain.com`). Used for OAuth/payment redirects and email links. |
+| `PORT` | Server | **Server Config** | Port on which the Express server listens (default: `3000`). |
+| `NODE_ENV` | Server | **Server Config** | Node environment (`development` or `production`). |
+| `VITE_SUPABASE_URL` | Client & Server | **Public** | Public HTTPS endpoint for your Supabase project. |
+| `VITE_SUPABASE_ANON_KEY` | Client & Server | **Public** | Public client anonymous key for user auth and RLS-protected queries. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server Only | **SECRET** | Elevated service role key for webhook payment inserts and admin transitions. **Never expose to client.** |
+| `SPOTIFY_CLIENT_ID` | Server Only | **SECRET** | Spotify Developer Application Client ID for metadata lookups. |
+| `SPOTIFY_CLIENT_SECRET` | Server Only | **SECRET** | Spotify Developer Application Secret. **Never expose to client.** |
+| `PAYPAL_CLIENT_ID` | Server Only | **SECRET** | PayPal REST App Client ID (Sandbox or Live). |
+| `PAYPAL_CLIENT_SECRET` | Server Only | **SECRET** | PayPal REST App Secret for order capture and token exchange. **Never expose to client.** |
+| `PAYPAL_WEBHOOK_ID` | Server Only | **SECRET** | PayPal Webhook ID for HMAC signature verification. |
+| `PAYPAL_MODE` | Server Only | **Server Config** | PayPal operational mode (`sandbox` or `production`). |
+| `PAYPAL_API_BASE` | Server Only | **Server Config** | Optional override for PayPal REST API base URL. |
+| `RESEND_API_KEY` | Server Only | **SECRET** | API key for Resend transactional email service. **Never expose to client.** |
+| `RESEND_FROM_EMAIL` | Server Only | **Server Config** | Sender identity for transactional emails (default: `JamBoost <notifications@jamboost.com>`). |
+| `VITE_PLAUSIBLE_DOMAIN` | Client Only | **Public (Optional)** | Domain for lightweight privacy-first analytics (e.g. `jamboost.com`). Off when unset. |
+| `VITE_TURNSTILE_SITE_KEY` | Client Only | **Public (Optional)** | Cloudflare Turnstile public site key for bot protection during sign-in and registration. |
 
 ---
 
-## 2. Server-Authoritative Pricing & Checkout Flow
+## 2. Cloudflare Turnstile Bot Protection & Supabase Auth Configuration
+
+To enable server-enforced bot protection on sign-up and sign-in:
+1. **Get Cloudflare Turnstile Keys**:
+   - In Cloudflare Dashboard, go to **Turnstile** and add a widget for your domain.
+   - Set widget mode to **Managed** or **Non-interactive**.
+   - Copy the **Site Key** to `VITE_TURNSTILE_SITE_KEY`.
+   - Copy the **Secret Key** for use in Supabase.
+2. **Switch on CAPTCHA in Supabase**:
+   - In your Supabase Project Dashboard, navigate to **Authentication** > **Attack Protection** (or **Bot Detection / CAPTCHA**).
+   - Toggle **Enable CAPTCHA protection** to `ON`.
+   - Select **Cloudflare Turnstile** as the CAPTCHA Provider.
+   - Enter your Cloudflare Turnstile **Secret Key**.
+   - Click **Save**.
+   Once enabled, Supabase Auth will reject sign-ups and logins that lack a valid Turnstile token. When `VITE_TURNSTILE_SITE_KEY` is configured, JamBoost renders the Turnstile challenge in the auth modal and passes `captchaToken` directly to `supabase.auth.signUp` and `supabase.auth.signInWithPassword`.
+
+---
+
+## 3. Server Endpoints & Health Check
+
+- `GET /api/health`: Health status endpoint returning HTTP 200 with `{ status: "ok", timestamp: "...", uptime: 123.45 }`. Used by load balancers and container orchestrators for liveness/readiness probes.
+- `POST /api/auth/rate-limit-check`: Server-side IP rate limiter check (enforces 5 attempts per hour for sign-up and password reset).
+- `POST /api/checkout`: Creates a server-authoritative PayPal order for a submission. Requires Supabase bearer token.
+- `POST /api/checkout/capture`: Server-side capture of approved PayPal order. Requires Supabase bearer token.
+- `POST /api/webhooks/paypal`: Cryptographically verified webhook handler for PayPal order completions and cancellations.
+- `POST /api/admin/submissions/:id/transition`: Admin-only state machine transition endpoint (`Pending -> Approved/Rejected -> Live -> Completed`) that sends transactional emails.
+- `GET /api/spotify/lookup`: Server-side cached Spotify track metadata resolver.
+
+---
+
+## 4. Transactional Emails (Resend)
+
+JamBoost sends transactional emails using Resend (`RESEND_API_KEY`) with clean, branded responsive HTML and plaintext fallbacks:
+1. **Artist Payment Received**: Sent immediately upon payment capture or webhook confirmation, acknowledging the campaign is queued for editorial review.
+2. **Internal Order Alert**: Sent to `orders@sanelowmusiclabel.co.za` whenever a new paid submission arrives, detailing track title, artist, plan, and payment ID.
+3. **Artist Submission Approved**: Sent when an admin transitions a campaign from `Pending` to `Approved`.
+4. **Artist Submission Rejected**: Sent when an admin rejects a submission, containing the curator's honest rejection reason and note regarding eligible refunds.
+5. **Campaign Completed**: Sent when a campaign transitions to `Completed`, detailing the reported results (curator playlists added, saves delivered, and streams delivered).
+
+---
+
+## 5. Server-Authoritative Pricing & Checkout Flow
 
 All campaign pricing is enforced strictly on the server:
 - **Starter Plan**: $29.00 USD (2,900 cents) — Deliverable: Pitched to 20 independent playlist curators
@@ -49,7 +97,7 @@ Client amounts are never accepted by the server. The checkout process proceeds a
 
 ---
 
-## 3. How to Set Up PayPal Sandbox & Credentials
+## 6. How to Set Up PayPal Sandbox & Credentials
 
 1. **Sign in to PayPal Developer**:
    - Go to [developer.paypal.com](https://developer.paypal.com) and log in.
@@ -69,7 +117,7 @@ Client amounts are never accepted by the server. The checkout process proceeds a
 
 ---
 
-## 4. Testing with PayPal Sandbox Cards & Buyer Accounts
+## 7. Testing with PayPal Sandbox Cards & Buyer Accounts
 
 ### Option A: Sandbox Personal Account (Recommended)
 1. Go to **Testing Tools** > **Sandbox Accounts** in your PayPal Developer dashboard.
@@ -102,7 +150,7 @@ You can test direct card payments using PayPal's official sandbox test cards:
 
 ---
 
-## 5. Refunds & Pitching Policy
+## 8. Refunds & Pitching Policy
  
 The refund policy is accessible at `/refunds`:
 - **100% Pre-Pitch Refund**: If a submission is rejected by JamBoost during initial editorial review prior to pitching commencing, a full 100% refund in USD is issued to the artist's PayPal account.

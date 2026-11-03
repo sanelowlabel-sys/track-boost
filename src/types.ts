@@ -9,9 +9,11 @@ export interface PlanConfig {
   name: string;
   price: number;
   priceDisplay: string;
+  currency: string;
   description: string;
   curatorsPitched: number;
   features: string[];
+  deliverables: string[];
   popular?: boolean;
 }
 
@@ -20,7 +22,8 @@ export const PLANS: Record<CampaignTier, PlanConfig> = {
     tier: 'Starter',
     name: 'Starter',
     price: 29,
-    priceDisplay: '$29 USD',
+    priceDisplay: '$29',
+    currency: 'USD',
     description: 'Direct pitch campaign for new or emerging single releases.',
     curatorsPitched: 20,
     features: [
@@ -29,12 +32,19 @@ export const PLANS: Record<CampaignTier, PlanConfig> = {
       'Curator placement updates in dashboard',
       'One-time fee • No recurring subscription',
     ],
+    deliverables: [
+      'Pitched to 20 independent playlist curators',
+      'Track quality & genre fit review',
+      'Placements & status tracked in dashboard',
+      '100% pre-pitch rejection refund policy',
+    ],
   },
   Pro: {
     tier: 'Pro',
     name: 'Pro',
     price: 89,
-    priceDisplay: '$89 USD',
+    priceDisplay: '$89',
+    currency: 'USD',
     description: 'Expanded pitching campaign across genre-specific playlist networks.',
     curatorsPitched: 60,
     features: [
@@ -44,13 +54,20 @@ export const PLANS: Record<CampaignTier, PlanConfig> = {
       'Curator placements and notes in dashboard',
       'One-time fee • No recurring subscription',
     ],
+    deliverables: [
+      'Pitched to 60 independent playlist curators',
+      'Priority review within 48 hours',
+      'Genre & territory targeting',
+      'Curator feedback & dashboard reporting',
+    ],
     popular: true,
   },
   Premium: {
     tier: 'Premium',
     name: 'Premium',
     price: 249,
-    priceDisplay: '$249 USD',
+    priceDisplay: '$249',
+    currency: 'USD',
     description: 'Comprehensive outreach campaign across targeted playlist networks.',
     curatorsPitched: 150,
     features: [
@@ -60,13 +77,20 @@ export const PLANS: Record<CampaignTier, PlanConfig> = {
       'Full campaign progress and feedback report',
       'One-time fee • No recurring subscription',
     ],
+    deliverables: [
+      'Pitched to 150 independent playlist curators',
+      'Fast-track review within 24 hours',
+      'Comprehensive network outreach',
+      'Full placement and curator feedback report',
+    ],
   },
   // Maintained for backward compatibility with database rows
   Viral: {
     tier: 'Viral',
     name: 'Premium',
     price: 249,
-    priceDisplay: '$249 USD',
+    priceDisplay: '$249',
+    currency: 'USD',
     description: 'Comprehensive outreach campaign across targeted playlist networks.',
     curatorsPitched: 150,
     features: [
@@ -75,6 +99,12 @@ export const PLANS: Record<CampaignTier, PlanConfig> = {
       'Targeted genre, territory & network pitching',
       'Full campaign progress and feedback report',
       'One-time fee • No recurring subscription',
+    ],
+    deliverables: [
+      'Pitched to 150 independent playlist curators',
+      'Fast-track review within 24 hours',
+      'Comprehensive network outreach',
+      'Full placement and curator feedback report',
     ],
   },
 };
@@ -141,4 +171,5 @@ export interface SubmissionFormData {
   territory: string;
   plan: CampaignTier;
   target_streams: number;
+  image_url?: string | null;
 }

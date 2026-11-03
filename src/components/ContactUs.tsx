@@ -1,13 +1,21 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, Clock, MapPin, Send, CheckCircle2, ArrowLeft, MessageSquare, Headphones } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { JamBoostLogo } from './JamBoostLogo';
+import { PageSeo } from './PageSeo';
 
 interface ContactUsProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export const ContactUs: React.FC<ContactUsProps> = ({ onBack }) => {
+  const navigate = useNavigate();
+  const handleBack = () => {
+    if (onBack) onBack();
+    else navigate('/');
+  };
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('Campaign Question');
@@ -28,11 +36,16 @@ export const ContactUs: React.FC<ContactUsProps> = ({ onBack }) => {
 
   return (
     <div className="min-h-screen bg-[#0E0E0E] text-white selection:bg-[#82C321] selection:text-black py-12 px-4 sm:px-6">
+      <PageSeo
+        title="Contact Us – JamBoost"
+        description="Get in touch with the JamBoost artist support and curation team."
+        path="/contact"
+      />
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Navigation & Header */}
         <div className="flex items-center justify-between border-b border-white/5 pb-6">
           <button
-            onClick={onBack}
+            onClick={handleBack}
             className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />

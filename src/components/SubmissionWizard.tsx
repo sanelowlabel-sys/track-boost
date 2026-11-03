@@ -24,6 +24,7 @@ import {
   type SubmissionFormData, 
   type Submission 
 } from '../types';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface SubmissionWizardProps {
   isOpen: boolean;
@@ -65,6 +66,7 @@ export const SubmissionWizard: React.FC<SubmissionWizardProps> = ({
   onRequestAuth,
   onSubmissionComplete,
 }) => {
+  const modalRef = useModalA11y<HTMLDivElement>({ isOpen, onClose });
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [url, setUrl] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
@@ -299,6 +301,7 @@ export const SubmissionWizard: React.FC<SubmissionWizardProps> = ({
       territory,
       plan,
       target_streams: 0,
+      image_url: spotifyItem.image_url || null,
     };
 
     try {
@@ -325,10 +328,15 @@ export const SubmissionWizard: React.FC<SubmissionWizardProps> = ({
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
         <motion.div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="wizard-modal-title"
+          tabIndex={-1}
           initial={{ opacity: 0, scale: 0.96, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 15 }}
-          className="relative w-full max-w-2xl bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden text-white max-h-[92vh] flex flex-col"
+          className="relative w-full max-w-2xl bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden text-white max-h-[92vh] flex flex-col focus:outline-none"
         >
           {/* Top Bar */}
           <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-6">
@@ -336,7 +344,7 @@ export const SubmissionWizard: React.FC<SubmissionWizardProps> = ({
               <span className="text-xs font-bold text-[#82C321] tracking-wider uppercase">
                 Spotify Promotion Wizard
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              <h2 id="wizard-modal-title" className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                 {step === 1 && 'Step 1: Validate Spotify Release'}
                 {step === 2 && 'Step 2: Choose Growth Plan & Genre'}
                 {step === 3 && 'Step 3: Review Campaign Details'}
@@ -404,7 +412,7 @@ export const SubmissionWizard: React.FC<SubmissionWizardProps> = ({
             {step === 1 && (
               <form onSubmit={handleStep1Next} className="space-y-6">
                 <div>
-                  <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">
+                  <label htmlFor="wizard-spotify-url" className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">
                     Spotify Track, Album, or Playlist URL / URI
                   </label>
                   <div className="flex gap-2">
@@ -413,12 +421,13 @@ export const SubmissionWizard: React.FC<SubmissionWizardProps> = ({
                         <Music className="w-5 h-5" />
                       </div>
                       <input
+                        id="wizard-spotify-url"
                         type="text"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         placeholder="https://open.spotify.com/track/..."
                         required
-                        className="w-full h-14 pl-12 pr-12 bg-[#121212] border border-white/10 rounded-2xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                        className="w-full h-14 pl-12 pr-12 bg-[#121212] border border-white/10 rounded-2xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] focus-visible:ring-2 focus-visible:ring-[#82C321] transition-colors"
                       />
                       {lookingUp && (
                         <div className="absolute inset-y-0 right-4 flex items-center text-[#82C321]">

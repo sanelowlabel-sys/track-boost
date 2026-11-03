@@ -79,10 +79,27 @@ export function formatAuthError(error: any): string {
   return msg || 'Authentication request failed. Please try again.';
 }
 
-// Auth Actions
+// Auth Actions with Turnstile & Per-IP Server Rate Limiting
+export async function checkAuthRateLimit(action: 'signup' | 'reset' | 'signin'): Promise<{ allowed: boolean; error?: string }> {
+  try {
+    const res = await fetch(`/api/auth/rate-limit-check?action=${action}`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { allowed: false, error: data.error || 'Too many attempts. Please try again later.' };
+    }
+    return { allowed: true };
+  } catch {
+    // If endpoint is not reachable, do not hard-block auth
+    return { allowed: true };
+  }
+}
+
 export async function signInWithEmail(
   email: string, 
-  pass: string
+  pass: string,
+  captchaToken?: string
 ): Promise<{ user: AuthUser | null; error: string | null }> {
   if (!supabase) {
     return { user: null, error: 'Database service is not configured.' };
@@ -92,6 +109,7 @@ export async function signInWithEmail(
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password: pass,
+      options: captchaToken ? { captchaToken } : undefined,
     });
     if (error) {
       return { user: null, error: formatAuthError(error) };
@@ -115,10 +133,17 @@ export async function signInWithEmail(
 export async function signUpWithEmail(
   email: string, 
   pass: string, 
-  name?: string
+  name?: string,
+  captchaToken?: string
 ): Promise<SignUpResult> {
   if (!supabase) {
     return { user: null, needsEmailConfirmation: false, error: 'Database service is not configured.' };
+  }
+
+  // Enforce server-side 5 per hour per-IP rate limit
+  const rateCheck = await checkAuthRateLimit('signup');
+  if (!rateCheck.allowed) {
+    return { user: null, needsEmailConfirmation: false, error: rateCheck.error || 'Too many attempts. Please try again later.' };
   }
 
   try {
@@ -127,6 +152,7 @@ export async function signUpWithEmail(
       password: pass,
       options: {
         data: { name: name || email.split('@')[0] },
+        captchaToken: captchaToken || undefined,
       },
     });
 
@@ -158,6 +184,12 @@ export async function signUpWithEmail(
 export async function resetPasswordForEmail(email: string): Promise<{ error: string | null }> {
   if (!supabase) {
     return { error: 'Database service is not configured.' };
+  }
+
+  // Enforce server-side 5 per hour per-IP rate limit
+  const rateCheck = await checkAuthRateLimit('reset');
+  if (!rateCheck.allowed) {
+    return { error: rateCheck.error || 'Too many attempts. Please try again later.' };
   }
 
   try {
@@ -219,6 +251,7 @@ export async function createSubmission(formData: SubmissionFormData): Promise<Su
     territory: formData.territory,
     plan: formData.plan,
     target_streams: formData.target_streams,
+    image_url: formData.image_url || null,
   };
 
   const { data, error } = await supabase

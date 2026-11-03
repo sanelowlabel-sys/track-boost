@@ -9,6 +9,8 @@ import {
   updateUserPassword, 
   type AuthUser 
 } from '../lib/supabase';
+import { useModalA11y } from '../hooks/useModalA11y';
+import { TurnstileWidget, TURNSTILE_SITE_KEY } from './TurnstileWidget';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -23,6 +25,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSuccess,
   initialMode = 'login',
 }) => {
+  const modalRef = useModalA11y<HTMLDivElement>({ isOpen, onClose });
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'resetPassword'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,12 +35,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   useEffect(() => {
     setMode(initialMode);
     setError(null);
     setSuccessNotice(null);
     setNeedsEmailConfirmation(false);
+    setTurnstileToken(null);
   }, [initialMode, isOpen]);
 
   if (!isOpen) return null;
@@ -47,6 +52,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError(null);
     setSuccessNotice(null);
     setNeedsEmailConfirmation(false);
+    setTurnstileToken(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +63,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       if (mode === 'login') {
-        const result = await signInWithEmail(email, password);
+        const result = await signInWithEmail(email, password, turnstileToken || undefined);
         if (result.error) {
           setError(result.error);
         } else if (result.user) {
@@ -70,7 +76,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setLoading(false);
           return;
         }
-        const result = await signUpWithEmail(email, password, name);
+        const result = await signUpWithEmail(email, password, name, turnstileToken || undefined);
         if (result.error) {
           setError(result.error);
         } else if (result.needsEmailConfirmation) {
@@ -119,10 +125,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
         <motion.div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="auth-modal-title"
+          tabIndex={-1}
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="relative w-full max-w-md bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden"
+          className="relative w-full max-w-md bg-[#181818] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden focus:outline-none"
         >
           {/* Close button */}
           <button
@@ -138,7 +149,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="flex justify-center mb-4">
               <JamBoostLogo size="sm" className="h-6" />
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">
+            <h2 id="auth-modal-title" className="text-2xl font-bold text-white tracking-tight">
               {needsEmailConfirmation && 'Check Your Email'}
               {!needsEmailConfirmation && mode === 'login' && 'Welcome Back'}
               {!needsEmailConfirmation && mode === 'signup' && 'Create an Account'}
@@ -222,7 +233,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === 'signup' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="auth-name" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
                     Artist or Label Name
                   </label>
                   <div className="relative">
@@ -230,12 +241,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <User className="w-4 h-4" />
                     </div>
                     <input
+                      id="auth-name"
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="e.g. Aiken Musique"
                       required={mode === 'signup'}
-                      className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                      className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] focus-visible:ring-2 focus-visible:ring-[#82C321] transition-colors"
                     />
                   </div>
                 </div>
@@ -243,7 +255,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {(mode === 'login' || mode === 'signup' || mode === 'forgot') && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="auth-email" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
                     Email Address
                   </label>
                   <div className="relative">
@@ -251,12 +263,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <Mail className="w-4 h-4" />
                     </div>
                     <input
+                      id="auth-email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="artist@example.com"
                       required
-                      className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                      className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] focus-visible:ring-2 focus-visible:ring-[#82C321] transition-colors"
                     />
                   </div>
                 </div>
@@ -265,7 +278,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {(mode === 'login' || mode === 'signup') && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    <label htmlFor="auth-password" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                       Password
                     </label>
                     {mode === 'login' && (
@@ -283,13 +296,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <Lock className="w-4 h-4" />
                     </div>
                     <input
+                      id="auth-password"
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={mode === 'signup' ? 'Minimum 10 characters' : '••••••••'}
                       minLength={mode === 'signup' ? 10 : undefined}
                       required
-                      className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                      className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] focus-visible:ring-2 focus-visible:ring-[#82C321] transition-colors"
                     />
                   </div>
                 </div>
@@ -298,7 +312,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {mode === 'resetPassword' && (
                 <>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                    <label htmlFor="auth-reset-password" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
                       New Password (min 10 characters)
                     </label>
                     <div className="relative">
@@ -306,19 +320,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <KeyRound className="w-4 h-4" />
                       </div>
                       <input
+                        id="auth-reset-password"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Minimum 10 characters"
                         minLength={10}
                         required
-                        className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                        className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] focus-visible:ring-2 focus-visible:ring-[#82C321] transition-colors"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                    <label htmlFor="auth-confirm-password" className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
                       Confirm New Password
                     </label>
                     <div className="relative">
@@ -326,22 +341,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <Lock className="w-4 h-4" />
                       </div>
                       <input
+                        id="auth-confirm-password"
                         type="password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
-                        minLength={6}
+                        minLength={10}
                         required
-                        className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] transition-colors"
+                        className="w-full h-12 pl-10 pr-4 bg-[#121212] border border-white/10 rounded-xl text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-[#82C321] focus-visible:ring-2 focus-visible:ring-[#82C321] transition-colors"
                       />
                     </div>
                   </div>
                 </>
               )}
 
+              {/* Cloudflare Turnstile Bot Protection */}
+              {(mode === 'login' || mode === 'signup') && (
+                <TurnstileWidget
+                  onVerify={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken(null)}
+                />
+              )}
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (Boolean(TURNSTILE_SITE_KEY) && (mode === 'login' || mode === 'signup') && !turnstileToken)}
                 className="w-full h-12 mt-2 bg-[#82C321] hover:bg-[#8fd524] text-black font-bold rounded-xl flex items-center justify-center gap-2 transition-transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-50"
               >
                 {loading ? (

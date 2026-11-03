@@ -1,14 +1,26 @@
 import React from 'react';
 import { ArrowLeft, Home, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { JamBoostLogo } from './JamBoostLogo';
+import { PageSeo } from './PageSeo';
 
 interface NotFoundProps {
-  onHome: () => void;
+  onHome?: () => void;
 }
 
 export const NotFound: React.FC<NotFoundProps> = ({ onHome }) => {
+  const navigate = useNavigate();
+  const handleHome = () => {
+    if (onHome) onHome();
+    else navigate('/');
+  };
+
   return (
     <div className="min-h-[75vh] flex items-center justify-center px-4 py-16 text-center">
+      <PageSeo
+        title="404 – Page Not Found | JamBoost"
+        description="The requested page could not be found on JamBoost."
+      />
       <div className="max-w-md w-full bg-[#181818] border border-white/10 rounded-3xl p-8 sm:p-10 shadow-2xl relative overflow-hidden">
         {/* Subtle glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[#82C321]/5 rounded-full blur-[100px] pointer-events-none" />
@@ -36,7 +48,7 @@ export const NotFound: React.FC<NotFoundProps> = ({ onHome }) => {
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
             <button
-              onClick={onHome}
+              onClick={handleHome}
               className="w-full sm:flex-1 h-12 bg-[#82C321] hover:bg-[#8fd524] text-black font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] cursor-pointer shadow-lg shadow-[#82C321]/20"
             >
               <Home className="w-4 h-4" />
@@ -47,7 +59,7 @@ export const NotFound: React.FC<NotFoundProps> = ({ onHome }) => {
                 if (typeof window !== 'undefined' && window.history.length > 1) {
                   window.history.back();
                 } else {
-                  onHome();
+                  handleHome();
                 }
               }}
               className="w-full sm:w-auto h-12 px-5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer border border-white/10 flex items-center justify-center gap-1.5"

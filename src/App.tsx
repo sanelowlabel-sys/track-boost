@@ -1,19 +1,27 @@
 import React, { useState, useEffect, type FormEvent } from 'react';
+import {
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+  Link,
+} from 'react-router-dom';
 import { motion } from 'motion/react';
-import { 
-  Play, 
-  Music, 
-  ChevronRight, 
-  CheckCircle2, 
-  BarChart3, 
-  Star, 
-  Zap, 
+import {
+  Play,
+  Music,
+  ChevronRight,
+  CheckCircle2,
+  BarChart3,
+  Star,
+  Zap,
   TrendingUp,
-  LogIn, 
-  LogOut, 
-  LayoutDashboard, 
-  Plus, 
-  ShieldCheck, 
+  LogIn,
+  LogOut,
+  LayoutDashboard,
+  Plus,
+  ShieldCheck,
   Radio,
   AlertCircle,
   FileText,
@@ -21,7 +29,7 @@ import {
   Headphones,
   Mail,
   Send,
-  Layers
+  Layers,
 } from 'lucide-react';
 import { JamBoostLogo } from './components/JamBoostLogo';
 import { AuthModal } from './components/AuthModal';
@@ -32,22 +40,29 @@ import { TermsOfService } from './components/TermsOfService';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { ContactUs } from './components/ContactUs';
 import { AdminDashboard } from './components/AdminDashboard';
+import { ResetPasswordPage } from './components/ResetPassword';
 import { NotFound } from './components/NotFound';
+import { PageSeo } from './components/PageSeo';
+import { Analytics } from './components/Analytics';
+import { useToast } from './components/Toast';
 import { isSupabaseConfigured, supabase, signOutUser, type AuthUser } from './lib/supabase';
 import { PLANS, DISPLAY_PLANS, type CampaignTier } from './types';
-
-export type AppView = 'home' | 'dashboard' | 'refunds' | 'terms' | 'privacy' | 'contact' | 'admin';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [roleLoading, setRoleLoading] = useState(true);
-  const [activeView, setActiveView] = useState<AppView>('home');
+  const [sessionLoading, setSessionLoading] = useState(true);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot' | 'resetPassword'>('login');
+  const [redirectAfterAuth, setRedirectAfterAuth] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [initialUrl, setInitialUrl] = useState('');
   const [initialPlan, setInitialPlan] = useState<CampaignTier>('Pro');
+
+  const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
 
   const fetchProfileRole = async (userId: string) => {
     setRoleLoading(true);
@@ -74,33 +89,16 @@ export default function App() {
     }
   };
 
-  const resolvePathToView = (pathname: string): AppView => {
-    if (pathname === '/admin') return 'admin';
-    if (pathname === '/refunds') return 'refunds';
-    if (pathname === '/terms') return 'terms';
-    if (pathname === '/privacy') return 'privacy';
-    if (pathname === '/contact') return 'contact';
-    if (pathname.startsWith('/dashboard')) return 'dashboard';
-    return 'home';
-  };
-
   useEffect(() => {
-    // Check initial path on load
-    if (typeof window !== 'undefined') {
-      setActiveView(resolvePathToView(window.location.pathname));
+    if (!supabase) {
+      setSessionLoading(false);
+      setRoleLoading(false);
+      return;
     }
-
-    const handlePopState = () => {
-      setActiveView(resolvePathToView(window.location.pathname));
-    };
-    window.addEventListener('popstate', handlePopState);
-
-    if (!supabase) return () => window.removeEventListener('popstate', handlePopState);
 
     // Detect password recovery in URL hash on mount
     if (typeof window !== 'undefined' && window.location.hash.includes('type=recovery')) {
-      setAuthMode('resetPassword');
-      setIsAuthOpen(true);
+      navigate('/reset-password');
     }
 
     // Check existing session on mount
@@ -115,10 +113,13 @@ export default function App() {
       } else {
         setRoleLoading(false);
       }
+      setSessionLoading(false);
     });
 
     // Single source of truth for auth state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         setCurrentUser({
           id: session.user.id,
@@ -133,40 +134,37 @@ export default function App() {
       }
 
       if (event === 'PASSWORD_RECOVERY') {
-        setAuthMode('resetPassword');
-        setIsAuthOpen(true);
+        navigate('/reset-password');
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
-
-  const navigateTo = (view: AppView) => {
-    setActiveView(view);
-    if (typeof window !== 'undefined') {
-      const path = view === 'home' ? '/' : `/${view}`;
-      window.history.pushState({}, '', path);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
+  }, [navigate]);
 
   const handleSignOut = async () => {
     await signOutUser();
     setCurrentUser(null);
     setUserRole(null);
-    navigateTo('home');
+    toast.info('Signed out of JamBoost');
+    navigate('/');
   };
 
-  const openAuth = (mode: 'login' | 'signup' | 'forgot' | 'resetPassword') => {
+  const openAuth = (mode: 'login' | 'signup' | 'forgot' | 'resetPassword', returnPath?: string) => {
     setAuthMode(mode);
+    if (returnPath) {
+      setRedirectAfterAuth(returnPath);
+    }
     setIsAuthOpen(true);
   };
 
   const handleAuthSuccess = (user: AuthUser) => {
     setCurrentUser(user);
-    navigateTo('dashboard');
+    toast.success(`Welcome back, ${user.name || user.email}!`);
+    const destination = redirectAfterAuth || '/dashboard';
+    setRedirectAfterAuth(null);
+    navigate(destination);
   };
 
   const handleOpenWizardWithUrl = (url?: string, tier?: CampaignTier) => {
@@ -206,31 +204,36 @@ export default function App() {
     );
   }
 
+  const isHome = location.pathname === '/';
+  const isDashboard = location.pathname.startsWith('/dashboard');
+
   return (
-    <div className="min-h-screen bg-[#0E0E0E] text-white selection:bg-[#82C321] selection:text-black">
+    <div className="min-h-screen bg-[#0E0E0E] text-white selection:bg-[#82C321] selection:text-black flex flex-col justify-between">
+      <Analytics />
+
       {/* Navigation Header */}
       <header className="fixed top-0 w-full z-40 bg-[#121212]/90 backdrop-blur-md border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <button
-              onClick={() => navigateTo('home')}
+            <Link
+              to="/"
               className="flex items-center gap-3 transition-opacity hover:opacity-90 cursor-pointer text-left"
               aria-label="JamBoost Home"
             >
               <JamBoostLogo size="sm" className="h-6 sm:h-7" />
-            </button>
+            </Link>
 
             {/* Navigation links */}
             <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-gray-400">
-              <button
-                onClick={() => navigateTo('home')}
+              <Link
+                to="/"
                 className={`transition-colors cursor-pointer ${
-                  activeView === 'home' ? 'text-white' : 'hover:text-white'
+                  isHome ? 'text-white' : 'hover:text-white'
                 }`}
               >
                 Home
-              </button>
-              {activeView === 'home' && (
+              </Link>
+              {isHome && (
                 <>
                   <a href="#how-it-works" className="hover:text-white transition-colors">
                     How It Works
@@ -244,73 +247,41 @@ export default function App() {
                 </>
               )}
               {currentUser && (
-                <button
-                  onClick={() => navigateTo('dashboard')}
+                <Link
+                  to="/dashboard"
                   className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    activeView === 'dashboard'
-                      ? 'text-[#82C321] font-bold'
-                      : 'hover:text-white'
+                    isDashboard ? 'text-white' : 'hover:text-white'
                   }`}
                 >
-                  <LayoutDashboard className="w-4 h-4" />
+                  <LayoutDashboard className="w-4 h-4 text-[#82C321]" />
                   <span>Dashboard</span>
-                </button>
+                </Link>
               )}
-              {currentUser && userRole === 'admin' && (
-                <button
-                  onClick={() => navigateTo('admin')}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    activeView === 'admin'
-                      ? 'text-[#82C321] font-bold'
-                      : 'text-amber-400 hover:text-amber-300'
-                  }`}
+              {userRole === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-1.5 text-amber-400 hover:text-amber-300 font-bold transition-colors cursor-pointer"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   <span>Admin</span>
-                </button>
+                </Link>
               )}
-              <button
-                onClick={() => navigateTo('refunds')}
-                className={`transition-colors cursor-pointer ${
-                  activeView === 'refunds' ? 'text-white font-bold' : 'hover:text-white'
-                }`}
-              >
-                Refunds
-              </button>
-              <button
-                onClick={() => navigateTo('contact')}
-                className={`transition-colors cursor-pointer ${
-                  activeView === 'contact' ? 'text-white font-bold' : 'hover:text-white'
-                }`}
-              >
-                Contact
-              </button>
             </nav>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-3">
             {currentUser ? (
               <>
-                {userRole === 'admin' && (
-                  <button
-                    onClick={() => navigateTo(activeView === 'admin' ? 'dashboard' : 'admin')}
-                    className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-xs font-semibold text-amber-300 border border-amber-500/20 transition-colors cursor-pointer"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>{activeView === 'admin' ? 'Artist Dashboard' : 'Admin Area'}</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => navigateTo(activeView === 'dashboard' ? 'home' : 'dashboard')}
-                  className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 hover:text-white border border-white/10 transition-colors cursor-pointer"
+                <Link
+                  to={isDashboard ? '/' : '/dashboard'}
+                  className="h-10 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-2 border border-white/10 transition-colors cursor-pointer"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5 text-[#82C321]" />
-                  <span>{activeView === 'dashboard' ? 'View Website' : 'My Dashboard'}</span>
-                </button>
+                  <span>{isDashboard ? 'View Website' : 'My Dashboard'}</span>
+                </Link>
 
                 <button
+                  type="button"
                   onClick={() => handleOpenWizardWithUrl()}
                   className="h-10 px-4 rounded-xl bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold flex items-center gap-1.5 transition-transform hover:scale-[1.02] cursor-pointer shadow-lg shadow-[#82C321]/20"
                 >
@@ -319,8 +290,10 @@ export default function App() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleSignOut}
                   title="Log out"
+                  aria-label="Log out of JamBoost"
                   className="h-10 w-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
@@ -329,12 +302,14 @@ export default function App() {
             ) : (
               <>
                 <button
+                  type="button"
                   onClick={() => openAuth('login')}
                   className="h-10 px-4 rounded-xl text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleOpenWizardWithUrl()}
                   className="h-10 px-5 rounded-xl bg-[#82C321] hover:bg-[#8fd524] text-black text-xs font-bold transition-transform hover:scale-105 cursor-pointer shadow-lg shadow-[#82C321]/20"
                 >
@@ -346,48 +321,88 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main View Area */}
-      <main className="pt-20">
-        {activeView === 'admin' ? (
-          roleLoading ? (
-            <div className="min-h-[60vh] flex flex-col items-center justify-center p-8">
-              <div className="w-10 h-10 border-2 border-[#82C321] border-t-transparent rounded-full animate-spin mb-4" />
-              <p className="text-sm text-gray-400">Verifying administrator access...</p>
-            </div>
-          ) : currentUser && userRole === 'admin' ? (
-            <AdminDashboard currentUser={currentUser} />
-          ) : (
-            <NotFound onHome={() => navigateTo('home')} />
-          )
-        ) : activeView === 'refunds' ? (
-          <RefundPolicy onBack={() => navigateTo(currentUser ? 'dashboard' : 'home')} />
-        ) : activeView === 'terms' ? (
-          <TermsOfService onBack={() => navigateTo(currentUser ? 'dashboard' : 'home')} />
-        ) : activeView === 'privacy' ? (
-          <PrivacyPolicy onBack={() => navigateTo(currentUser ? 'dashboard' : 'home')} />
-        ) : activeView === 'contact' ? (
-          <ContactUs onBack={() => navigateTo(currentUser ? 'dashboard' : 'home')} />
-        ) : activeView === 'dashboard' && currentUser ? (
-          <UserDashboard
-            user={currentUser}
-            onOpenWizard={() => handleOpenWizardWithUrl()}
-            onSignOut={handleSignOut}
+      {/* Main View Area Routed via React Router */}
+      <main className="pt-20 flex-1">
+        <Routes>
+          {/* Landing page */}
+          <Route
+            path="/"
+            element={
+              <>
+                <PageSeo
+                  title="JamBoost – Real Spotify Playlist Pitching for Independent Artists"
+                  description="JamBoost pitches your music to independent playlist curators. Transparent campaign tracking, zero stream guarantees, and direct artist support."
+                  path="/"
+                />
+                <Hero onOpenWizard={handleOpenWizardWithUrl} />
+                <HowItWorks />
+                <ExplanationCards />
+                <Features />
+                <Pricing onSelectTier={(tier) => handleOpenWizardWithUrl(undefined, tier)} />
+              </>
+            }
           />
-        ) : (
-          <>
-            <Hero onOpenWizard={handleOpenWizardWithUrl} />
-            <HowItWorks />
-            <ExplanationCards />
-            <Features />
-            <Pricing onSelectTier={(tier) => handleOpenWizardWithUrl(undefined, tier)} />
-          </>
-        )}
+
+          {/* Signed-in user dashboard */}
+          <Route
+            path="/dashboard"
+            element={
+              sessionLoading ? (
+                <div className="min-h-[60vh] flex flex-col items-center justify-center p-8">
+                  <div className="w-10 h-10 border-2 border-[#82C321] border-t-transparent rounded-full animate-spin mb-4" />
+                  <p className="text-sm text-gray-400">Loading your artist dashboard...</p>
+                </div>
+              ) : currentUser ? (
+                <>
+                  <PageSeo
+                    title="Artist Dashboard – JamBoost"
+                    description="Track your active playlist pitches, curator placements, and delivered stream reports."
+                    path="/dashboard"
+                  />
+                  <UserDashboard
+                    user={currentUser}
+                    onOpenWizard={() => handleOpenWizardWithUrl()}
+                    onSignOut={handleSignOut}
+                  />
+                </>
+              ) : (
+                <RequireAuthPrompt onOpenLogin={() => openAuth('login', '/dashboard')} />
+              )
+            }
+          />
+
+          {/* Admin console */}
+          <Route
+            path="/admin"
+            element={
+              sessionLoading || roleLoading ? (
+                <div className="min-h-[60vh] flex flex-col items-center justify-center p-8">
+                  <div className="w-10 h-10 border-2 border-[#82C321] border-t-transparent rounded-full animate-spin mb-4" />
+                  <p className="text-sm text-gray-400">Verifying administrator access...</p>
+                </div>
+              ) : currentUser && userRole === 'admin' ? (
+                <AdminDashboard currentUser={currentUser} />
+              ) : (
+                <NotFound />
+              )
+            }
+          />
+
+          {/* Legal and information pages */}
+          <Route path="/refunds" element={<RefundPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/contact" element={<ContactUs />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+          {/* Friendly 404 catch-all */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </main>
 
       {/* Footer */}
       <Footer
         onOpenAuth={() => openAuth('login')}
-        onNavigate={navigateTo}
         isAdmin={userRole === 'admin'}
       />
 
@@ -408,12 +423,40 @@ export default function App() {
         initialPlan={initialPlan}
         onRequestAuth={() => {
           setIsWizardOpen(false);
-          openAuth('login');
+          openAuth('login', '/dashboard');
         }}
         onSubmissionComplete={() => {
-          setActiveView('dashboard');
+          navigate('/dashboard');
         }}
       />
+    </div>
+  );
+}
+
+function RequireAuthPrompt({ onOpenLogin }: { onOpenLogin: () => void }) {
+  useEffect(() => {
+    onOpenLogin();
+  }, [onOpenLogin]);
+
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center px-4 py-16 text-center">
+      <div className="max-w-md w-full bg-[#181818] border border-white/10 rounded-3xl p-8 sm:p-10 shadow-2xl space-y-6">
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-[#82C321]/15 border border-[#82C321]/30 flex items-center justify-center text-[#82C321]">
+          <Lock className="w-7 h-7" />
+        </div>
+        <h1 className="text-2xl font-bold text-white">Sign In Required</h1>
+        <p className="text-sm text-gray-400 leading-relaxed">
+          The Artist Dashboard is available exclusively for signed-in artists. Please sign in or create an account to view your campaigns.
+        </p>
+        <button
+          type="button"
+          onClick={onOpenLogin}
+          className="w-full h-12 bg-[#82C321] hover:bg-[#8fd524] text-black font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] cursor-pointer shadow-lg shadow-[#82C321]/20"
+        >
+          <LogIn className="w-4 h-4 stroke-[2.5]" />
+          <span>Sign In to Dashboard</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -448,62 +491,67 @@ function Hero({
           {/* Status Chip */}
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-[#82C321] font-semibold mb-8">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#82C321] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#82C321]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#82C321] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#82C321]" />
             </span>
-            JamBoost • Independent Playlist Pitching
+            <span>Real Playlist Pitching • Verified Independent Curators</span>
           </div>
 
-          {/* Truthful Headline */}
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold mb-6 tracking-tight leading-tight text-white">
-            Get your music in front of real playlist curators.
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight mb-6 leading-tight">
+            Get your music in front of{' '}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-[#82C321] to-emerald-400">
+              real playlist curators.
+            </span>
           </h1>
 
-          {/* Honest Subheadline & Line */}
-          <p className="text-base sm:text-lg text-gray-300 mb-8 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-gray-400 text-lg sm:text-xl max-w-2xl mx-auto mb-4 leading-relaxed font-normal">
+            Directly pitch your tracks to tastemakers who actually listen. Track curator reviews, playlist adds, and campaign progress with full transparency.
+          </p>
+
+          <p className="text-xs text-gray-500 max-w-xl mx-auto mb-10 leading-relaxed italic">
             We pitch your release to playlists. We do not sell streams, and results depend on your music and the curators' decisions.
           </p>
 
-          {/* Spotify Link Submission Bar */}
-          <form onSubmit={handleBoost} className="max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                <Music className="w-5 h-5 text-gray-500" />
+          {/* Quick Submission Bar */}
+          <form 
+            onSubmit={handleBoost}
+            className="max-w-2xl mx-auto bg-[#181818] p-2 sm:p-2.5 rounded-2xl border border-white/10 shadow-2xl flex flex-col sm:flex-row gap-2 relative z-20 mb-8"
+          >
+            <div className="relative flex-1 flex items-center">
+              <div className="absolute left-4 text-gray-500">
+                <Music className="w-5 h-5" />
               </div>
               <input
                 type="text"
                 value={trackUrl}
                 onChange={(e) => setTrackUrl(e.target.value)}
-                placeholder="Paste your Spotify Track, Album, or Playlist URL..."
-                className="w-full h-14 pl-12 pr-4 bg-[#161616] border border-white/10 rounded-2xl focus:outline-none focus:border-[#82C321] transition-colors text-white placeholder:text-gray-500 text-sm"
-                required
+                placeholder="Paste Spotify Track, Album, or Playlist link..."
+                className="w-full bg-transparent pl-12 pr-4 py-3 text-white placeholder:text-gray-500 text-sm focus:outline-none"
               />
             </div>
             <button
               type="submit"
-              className="h-14 px-8 bg-[#82C321] hover:bg-[#8fd524] text-black font-bold rounded-2xl flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] cursor-pointer whitespace-nowrap shadow-lg shadow-[#82C321]/20 text-sm"
+              className="h-12 px-8 bg-[#82C321] hover:bg-[#8fd524] text-black font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-lg shadow-[#82C321]/20 whitespace-nowrap"
             >
-              <span>Submit Spotify Link</span>
+              <span>Submit Track</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </form>
 
-          {/* Truthful badges */}
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1.5">
+          {/* Key Value Props */}
+          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs text-gray-400">
+            <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-[#82C321]" />
-              Direct pitching to independent curators
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4 text-[#82C321]" />
-              Transparent reporting in your dashboard
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-[#82C321]" />
-              Full refund if rejected prior to pitch
-            </span>
+              <span>100% Curator Rejection Guarantee</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#82C321]" />
+              <span>Realtime Status via Supabase</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#82C321]" />
+              <span>Zero Artificial Streams</span>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -514,54 +562,52 @@ function Hero({
 function HowItWorks() {
   const steps = [
     {
-      num: "01",
-      title: "Submit your link",
-      desc: "Paste your Spotify track, album, or playlist URL to automatically retrieve cover art and release details.",
+      num: '01',
+      title: 'Submit your link',
+      desc: 'Paste any public Spotify track, album, or playlist link. We automatically retrieve your release metadata and artwork.',
     },
     {
-      num: "02",
-      title: "We review it",
-      desc: "Our editorial team listens to your release to evaluate production quality, sound mixing, and genre alignment.",
+      num: '02',
+      title: 'We review it',
+      desc: 'Our curation team reviews your submission for genre fit and audio quality within 24 hours. Full refund if rejected.',
     },
     {
-      num: "03",
-      title: "We pitch it to playlists",
-      desc: "We pitch your release directly to independent playlist curators whose listening niches match your genre.",
+      num: '03',
+      title: 'We pitch it to playlists',
+      desc: 'We present your music directly to independent playlist curators whose listening taste matches your release genre.',
     },
     {
-      num: "04",
-      title: "Track your results in your dashboard",
-      desc: "Monitor curator feedback, campaign progress, and playlist additions live in your artist dashboard.",
+      num: '04',
+      title: 'Track results in dashboard',
+      desc: 'Monitor curator feedback, active playlist placements, and delivered stream progress live inside your artist portal.',
     },
   ];
 
   return (
-    <section id="how-it-works" className="py-16 border-y border-white/5 bg-[#121212]">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#82C321]/10 text-[#82C321] text-xs font-bold uppercase tracking-wider mb-2">
-            Step-by-Step Process
-          </div>
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
+    <section id="how-it-works" className="py-20 px-6 border-y border-white/5 bg-[#121212]/50">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-16">
+          <span className="text-xs font-bold text-[#82C321] uppercase tracking-wider">Simple & Transparent</span>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-2 mb-3">
             How It Works
           </h2>
-          <p className="text-sm text-gray-400 mt-2 max-w-lg mx-auto">
-            A clear, straightforward pitching process with no hidden algorithms or false promises.
+          <p className="text-sm text-gray-400 max-w-xl mx-auto">
+            A straightforward, four-step pitching process designed for independent artists, producers, and record labels.
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {steps.map((st, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {steps.map((step) => (
             <div
-              key={i}
-              className="p-6 rounded-2xl bg-[#161616] border border-white/5 hover:border-white/10 transition-colors relative flex flex-col justify-between"
+              key={step.num}
+              className="bg-[#181818] border border-white/5 rounded-3xl p-6 relative flex flex-col justify-between hover:border-white/10 transition-colors"
             >
               <div>
-                <div className="text-2xl font-black text-[#82C321] font-mono mb-4">
-                  {st.num}
-                </div>
-                <h3 className="text-lg font-bold text-white mb-2">{st.title}</h3>
-                <p className="text-xs text-gray-400 leading-relaxed">{st.desc}</p>
+                <span className="text-2xl font-black text-[#82C321]/30 font-mono block mb-4">
+                  {step.num}
+                </span>
+                <h3 className="text-lg font-bold text-white mb-2">{step.title}</h3>
+                <p className="text-xs text-gray-400 leading-relaxed">{step.desc}</p>
               </div>
             </div>
           ))}
@@ -574,28 +620,32 @@ function HowItWorks() {
 function ExplanationCards() {
   return (
     <section className="py-16 px-6">
-      <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-6">
-        <div className="flex gap-4 p-6 rounded-2xl bg-[#161616] border border-white/5">
-          <div className="w-12 h-12 rounded-2xl bg-[#82C321]/10 flex items-center justify-center shrink-0">
-            <BarChart3 className="w-6 h-6 text-[#82C321]" />
+      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-[#181818] border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-colors">
+          <div className="w-12 h-12 rounded-2xl bg-[#82C321]/10 border border-[#82C321]/20 flex items-center justify-center text-[#82C321] mb-5">
+            <Radio className="w-6 h-6" />
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-white mb-1.5">Transparent Campaign Tracking</h3>
-            <p className="text-xs sm:text-sm text-gray-400 leading-relaxed">
-              Curator additions, playlist placements, and notes are tracked directly in your artist dashboard. Review your pitching progress with complete clarity.
-            </p>
+          <h3 className="text-xl font-bold text-white mb-2">Direct Curator Pitching</h3>
+          <p className="text-sm text-gray-400 leading-relaxed mb-4">
+            We pitch your music directly to independent playlist curators whose lists match your specific genre and target territory. Every curator listens to your track personally before deciding whether to place it.
+          </p>
+          <div className="flex items-center gap-2 text-xs text-[#82C321] font-semibold">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Honest curator relationships • No pay-for-placement scams</span>
           </div>
         </div>
 
-        <div className="flex gap-4 p-6 rounded-2xl bg-[#161616] border border-white/5">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
-            <Radio className="w-6 h-6 text-blue-400" />
+        <div className="bg-[#181818] border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-colors">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-5">
+            <ShieldCheck className="w-6 h-6" />
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-white mb-1.5">Curator-Focused Outreach</h3>
-            <p className="text-xs sm:text-sm text-gray-400 leading-relaxed">
-              We pitch your tracks to real, independent curators who manage active playlists in your genre. Placements are never automated and depend entirely on curator choices.
-            </p>
+          <h3 className="text-xl font-bold text-white mb-2">Transparent Progress Tracking</h3>
+          <p className="text-sm text-gray-400 leading-relaxed mb-4">
+            Follow your campaign status in real time through Supabase realtime subscriptions. Review the playlists where your track was placed, listener saves, and stream updates directly reported by our team.
+          </p>
+          <div className="flex items-center gap-2 text-xs text-emerald-400 font-semibold">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Clear status progression: Pending → Approved → Live → Completed</span>
           </div>
         </div>
       </div>
@@ -604,47 +654,53 @@ function ExplanationCards() {
 }
 
 function Features() {
-  const items = [
+  const features = [
     {
-      icon: Music,
-      title: "Direct Spotify Link Wizard",
-      desc: "Fast URL lookup for Tracks, Albums, and Playlists with automatic media verification and artwork lookup via the Spotify Web API.",
+      icon: <Music className="w-5 h-5 text-[#82C321]" />,
+      title: 'Targeted Curator Matching',
+      desc: 'Pitched to curators categorized by subgenre—from Synthwave and Amapiano to Indie Rock and Commercial Pop.',
     },
     {
-      icon: Radio,
-      title: "Real-Time Dashboard Sync",
-      desc: "Instant database subscriptions keep your campaign review stages, curator notes, and placement updates synchronized in real time.",
+      icon: <Zap className="w-5 h-5 text-[#82C321]" />,
+      title: 'Realtime Dashboard',
+      desc: 'Instant campaign feedback. Watch status changes update instantly without needing to refresh your browser.',
     },
     {
-      icon: TrendingUp,
-      title: "Targeted Curation Packages",
-      desc: "Choose Starter, Pro, or Premium pitching tiers designed for your release goals and target territories.",
+      icon: <ShieldCheck className="w-5 h-5 text-[#82C321]" />,
+      title: '100% Rejection Refund',
+      desc: 'If our curation team determines your release is not a fit for playlist pitching, we refund your payment in full.',
+    },
+    {
+      icon: <TrendingUp className="w-5 h-5 text-[#82C321]" />,
+      title: 'Curator Feedback',
+      desc: 'Receive transparent notes from playlist tastemakers directly inside your personal campaign dashboard.',
     },
   ];
 
   return (
-    <section id="features" className="py-20 px-6 bg-[#121212] border-t border-white/5">
+    <section id="features" className="py-20 px-6">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-14">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-3 tracking-tight">
-            Built for Independent Artists & Labels
+        <div className="text-center mb-16">
+          <span className="text-xs font-bold text-[#82C321] uppercase tracking-wider">Why Artists Choose Us</span>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-2 mb-3">
+            Built for Real Music Discovery
           </h2>
-          <p className="text-sm text-gray-400 max-w-lg mx-auto">
-            Everything you need to pitch and monitor your music promotion with complete transparency.
+          <p className="text-sm text-gray-400 max-w-xl mx-auto">
+            Tools, safeguards, and curator connections to help your music reach actual listeners.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
-          {items.map((it, idx) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {features.map((feat, i) => (
             <div
-              key={idx}
-              className="p-6 rounded-3xl bg-[#181818] border border-white/10 hover:border-[#82C321]/30 transition-colors"
+              key={i}
+              className="bg-[#181818] border border-white/5 rounded-3xl p-6 hover:border-white/10 transition-colors"
             >
-              <div className="w-12 h-12 rounded-2xl bg-[#82C321]/10 flex items-center justify-center mb-5">
-                <it.icon className="w-6 h-6 text-[#82C321]" />
+              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center mb-4">
+                {feat.icon}
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">{it.title}</h3>
-              <p className="text-sm text-gray-400 leading-relaxed">{it.desc}</p>
+              <h3 className="text-base font-bold text-white mb-1.5">{feat.title}</h3>
+              <p className="text-xs text-gray-400 leading-relaxed">{feat.desc}</p>
             </div>
           ))}
         </div>
@@ -655,63 +711,73 @@ function Features() {
 
 function Pricing({ onSelectTier }: { onSelectTier: (tier: CampaignTier) => void }) {
   return (
-    <section id="pricing" className="py-24 px-6 relative">
+    <section id="pricing" className="py-20 px-6 bg-[#121212]/30 border-t border-white/5">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
-            Transparent Pitching Packages
+          <span className="text-xs font-bold text-[#82C321] uppercase tracking-wider">Transparent Pricing</span>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-2 mb-3">
+            One-Time Pitch Packages
           </h2>
-          <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed">
-            One-time fee per campaign in USD. No recurring subscriptions, no bot streams, and no stream guarantees. What you see is exactly what we deliver.
+          <p className="text-sm text-gray-400 max-w-xl mx-auto mb-2">
+            One-time payment with zero recurring subscriptions. Backed by our 100% Curator Rejection Guarantee.
+          </p>
+          <p className="text-xs text-gray-500 italic max-w-lg mx-auto">
+            All prices in USD. We pitch your release to playlist curators; results depend on curator decisions.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
           {DISPLAY_PLANS.map((plan) => {
-            const IconComponent = plan.tier === 'Starter' ? Star : plan.tier === 'Pro' ? Zap : TrendingUp;
+            const isFeatured = plan.name === 'Pro';
             return (
-              <div 
-                key={plan.tier}
-                className={`rounded-3xl p-8 relative flex flex-col justify-between ${
-                  plan.popular 
-                    ? 'bg-[#181818] border-2 border-[#82C321] shadow-xl shadow-[#82C321]/10' 
-                    : 'bg-[#141414] border border-white/10'
+              <div
+                key={plan.name}
+                className={`bg-[#181818] border rounded-3xl p-7 sm:p-8 flex flex-col justify-between relative transition-all ${
+                  isFeatured
+                    ? 'border-[#82C321] shadow-2xl shadow-[#82C321]/10 md:-translate-y-2'
+                    : 'border-white/5 hover:border-white/10'
                 }`}
               >
-                {plan.popular && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-[#82C321] text-black px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                {isFeatured && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#82C321] text-black text-[10px] uppercase tracking-widest font-extrabold px-3 py-1 rounded-full shadow-md">
                     Most Popular
                   </div>
                 )}
 
                 <div>
-                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-6">
-                    <IconComponent className={`w-6 h-6 ${plan.popular ? 'text-[#82C321]' : 'text-gray-400'}`} />
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold text-white">{plan.name}</h3>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-white/5 text-gray-300">
+                      One-time
+                    </span>
                   </div>
 
-                  <h3 className="text-2xl font-bold text-white mb-1">{plan.name}</h3>
-                  <div className="mb-4">
-                    <span className="text-4xl font-bold text-white">{plan.priceDisplay}</span>
-                    <span className="text-gray-500 text-xs font-medium"> one-time fee</span>
+                  <div className="mb-6">
+                    <span className="text-4xl font-black text-white">{plan.priceDisplay}</span>
+                    <span className="text-xs text-gray-400 ml-1.5 font-bold uppercase">{plan.currency}</span>
                   </div>
-                  <p className="text-gray-400 text-xs mb-6 pb-6 border-b border-white/5">{plan.description}</p>
 
-                  <ul className="space-y-3.5 mb-8">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-3">
+                  <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+                    {plan.description}
+                  </p>
+
+                  <div className="space-y-3 pt-4 border-t border-white/5 mb-8">
+                    {plan.deliverables.map((item, idx) => (
+                      <div key={idx} className="flex items-start gap-2.5 text-xs text-gray-300">
                         <CheckCircle2 className="w-4 h-4 text-[#82C321] shrink-0 mt-0.5" />
-                        <span className="text-xs font-medium text-gray-300">{feature}</span>
-                      </li>
+                        <span>{item}</span>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
 
-                <button 
-                  onClick={() => onSelectTier(plan.tier)}
-                  className={`w-full py-3.5 rounded-xl font-bold text-sm transition-colors cursor-pointer ${
-                    plan.popular 
-                      ? 'bg-[#82C321] hover:bg-[#8fd524] text-black' 
-                      : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
+                <button
+                  type="button"
+                  onClick={() => onSelectTier(plan.name as CampaignTier)}
+                  className={`w-full h-12 rounded-xl text-xs font-bold transition-transform hover:scale-[1.02] cursor-pointer shadow-md ${
+                    isFeatured
+                      ? 'bg-[#82C321] hover:bg-[#8fd524] text-black shadow-[#82C321]/20'
+                      : 'bg-white/10 hover:bg-white/20 text-white'
                   }`}
                 >
                   Choose {plan.name} Campaign
@@ -727,11 +793,9 @@ function Pricing({ onSelectTier }: { onSelectTier: (tier: CampaignTier) => void 
 
 function Footer({ 
   onOpenAuth, 
-  onNavigate,
   isAdmin
 }: { 
   onOpenAuth: () => void; 
-  onNavigate: (view: AppView) => void;
   isAdmin?: boolean;
 }) {
   return (
@@ -741,32 +805,32 @@ function Footer({
           <JamBoostLogo size="sm" className="h-6" />
         </div>
         <p className="text-gray-500 text-xs text-center md:text-left max-w-md leading-relaxed">
-          © {new Date().getFullYear()} JamBoost. All rights reserved. JamBoost is an independent music promotion service and is not affiliated with, endorsed by, or sponsored by Spotify AB. Spotify is a registered trademark of Spotify AB.
+          © {new Date().getFullYear()} JamBoost by Sanelow Music Label. All rights reserved. JamBoost is an independent music promotion service and is not affiliated with, endorsed by, or sponsored by Spotify AB. Spotify is a registered trademark of Spotify AB.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-gray-400">
-          <button onClick={onOpenAuth} className="hover:text-white transition-colors cursor-pointer">
+          <button type="button" onClick={onOpenAuth} className="hover:text-white transition-colors cursor-pointer">
             Artist Portal
           </button>
           {isAdmin && (
-            <button
-              onClick={() => onNavigate('admin')}
+            <Link
+              to="/admin"
               className="text-amber-400 hover:text-amber-300 font-semibold transition-colors cursor-pointer"
             >
               Admin Area
-            </button>
+            </Link>
           )}
-          <button onClick={() => onNavigate('refunds')} className="hover:text-white transition-colors cursor-pointer">
+          <Link to="/refunds" className="hover:text-white transition-colors cursor-pointer">
             Refund Policy
-          </button>
-          <button onClick={() => onNavigate('terms')} className="hover:text-white transition-colors cursor-pointer">
+          </Link>
+          <Link to="/terms" className="hover:text-white transition-colors cursor-pointer">
             Terms of Service
-          </button>
-          <button onClick={() => onNavigate('privacy')} className="hover:text-white transition-colors cursor-pointer">
+          </Link>
+          <Link to="/privacy" className="hover:text-white transition-colors cursor-pointer">
             Privacy Policy
-          </button>
-          <button onClick={() => onNavigate('contact')} className="hover:text-white transition-colors cursor-pointer">
+          </Link>
+          <Link to="/contact" className="hover:text-white transition-colors cursor-pointer">
             Contact Us
-          </button>
+          </Link>
         </div>
       </div>
     </footer>
